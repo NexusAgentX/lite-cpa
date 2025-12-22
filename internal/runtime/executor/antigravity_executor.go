@@ -32,18 +32,18 @@ import (
 )
 
 const (
-	antigravityBaseURLDaily = "https://daily-cloudcode-pa.sandbox.googleapis.com"
-	// antigravityBaseURLAutopush     = "https://autopush-cloudcode-pa.sandbox.googleapis.com"
-	antigravityBaseURLProd     = "https://cloudcode-pa.googleapis.com"
-	antigravityCountTokensPath = "/v1internal:countTokens"
-	antigravityStreamPath      = "/v1internal:streamGenerateContent"
-	antigravityGeneratePath    = "/v1internal:generateContent"
-	antigravityModelsPath      = "/v1internal:fetchAvailableModels"
-	antigravityClientID        = "ANTIGRAVITY_CLIENT_ID_PLACEHOLDER"
-	antigravityClientSecret    = "ANTIGRAVITY_CLIENT_SECRET_PLACEHOLDER"
-	defaultAntigravityAgent    = "antigravity/1.11.5 windows/amd64"
-	antigravityAuthType        = "antigravity"
-	refreshSkew                = 3000 * time.Second
+	antigravityBaseURLDaily        = "https://daily-cloudcode-pa.googleapis.com"
+	antigravitySandboxBaseURLDaily = "https://daily-cloudcode-pa.sandbox.googleapis.com"
+	antigravityBaseURLProd         = "https://cloudcode-pa.googleapis.com"
+	antigravityCountTokensPath     = "/v1internal:countTokens"
+	antigravityStreamPath          = "/v1internal:streamGenerateContent"
+	antigravityGeneratePath        = "/v1internal:generateContent"
+	antigravityModelsPath          = "/v1internal:fetchAvailableModels"
+	antigravityClientID            = "ANTIGRAVITY_CLIENT_ID_PLACEHOLDER"
+	antigravityClientSecret        = "ANTIGRAVITY_CLIENT_SECRET_PLACEHOLDER"
+	defaultAntigravityAgent        = "antigravity/1.11.5 windows/amd64"
+	antigravityAuthType            = "antigravity"
+	refreshSkew                    = 3000 * time.Second
 )
 
 var randSource = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -1152,7 +1152,7 @@ func antigravityBaseURLFallbackOrder(auth *cliproxyauth.Auth) []string {
 	}
 	return []string{
 		antigravityBaseURLDaily,
-		// antigravityBaseURLAutopush,
+		antigravitySandboxBaseURLDaily,
 		antigravityBaseURLProd,
 	}
 }
