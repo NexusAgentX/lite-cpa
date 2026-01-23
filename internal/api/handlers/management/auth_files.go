@@ -1020,17 +1020,13 @@ func (h *Handler) RequestGeminiCLIToken(c *gin.Context) {
 
 	fmt.Println("Initializing Google authentication...")
 
-	// OAuth2 configuration (mirrors internal/auth/gemini)
+	// OAuth2 configuration using exported constants from internal/auth/gemini
 	conf := &oauth2.Config{
-		ClientID:     "GEMINI_CLIENT_ID_PLACEHOLDER",
-		ClientSecret: "GEMINI_CLIENT_SECRET_PLACEHOLDER",
-		RedirectURL:  "http://localhost:8085/oauth2callback",
-		Scopes: []string{
-			"https://www.googleapis.com/auth/cloud-platform",
-			"https://www.googleapis.com/auth/userinfo.email",
-			"https://www.googleapis.com/auth/userinfo.profile",
-		},
-		Endpoint: google.Endpoint,
+		ClientID:     geminiAuth.ClientID,
+		ClientSecret: geminiAuth.ClientSecret,
+		RedirectURL:  fmt.Sprintf("http://localhost:%d/oauth2callback", geminiAuth.DefaultCallbackPort),
+		Scopes:       geminiAuth.Scopes,
+		Endpoint:     google.Endpoint,
 	}
 
 	// Build authorization URL and return it immediately
