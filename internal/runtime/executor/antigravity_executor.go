@@ -45,7 +45,7 @@ const (
 	antigravityGeneratePath        = "/v1internal:generateContent"
 	antigravityClientID            = "ANTIGRAVITY_CLIENT_ID_PLACEHOLDER"
 	antigravityClientSecret        = "ANTIGRAVITY_CLIENT_SECRET_PLACEHOLDER"
-	defaultAntigravityAgent        = "antigravity/1.19.6 darwin/arm64"
+	defaultAntigravityAgent        = "antigravity/1.21.9 darwin/arm64"
 	antigravityAuthType            = "antigravity"
 	refreshSkew                    = 3000 * time.Second
 	antigravityCreditsRetryTTL     = 5 * time.Hour
