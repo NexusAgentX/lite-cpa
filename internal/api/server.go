@@ -30,6 +30,7 @@ import (
 	ampmodule "github.com/router-for-me/CLIProxyAPI/v7/internal/api/modules/amp"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/cache"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/dashboard"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/home"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/managementasset"
@@ -65,10 +66,19 @@ type serverOptionConfig struct {
 type ServerOption func(*serverOptionConfig)
 
 func defaultRequestLoggerFactory(cfg *config.Config, configPath string) logging.RequestLogger {
-	configDir := filepath.Dir(configPath)
 	logsDir := logging.ResolveLogDirectory(cfg)
-	logger := logging.NewFileRequestLogger(cfg.RequestLog, logsDir, configDir, cfg.ErrorLogsMaxFiles)
-	logger.SetHomeEnabled(cfg != nil && cfg.Home.Enabled)
+	dbPath := os.Getenv("SQLITE_LOG_PATH")
+	if dbPath == "" {
+		dbPath = filepath.Join(logsDir, "requests.db")
+	}
+	logger, err := logging.NewSqliteRequestLogger(cfg.RequestLog, dbPath)
+	if err != nil {
+		log.Warnf("failed to create sqlite request logger: %v, falling back to file logger", err)
+		configDir := filepath.Dir(configPath)
+		fileLogger := logging.NewFileRequestLogger(cfg.RequestLog, logsDir, configDir, cfg.ErrorLogsMaxFiles)
+		fileLogger.SetHomeEnabled(cfg != nil && cfg.Home.Enabled)
+		return fileLogger
+	}
 	return logger
 }
 
@@ -172,6 +182,9 @@ type Server struct {
 
 	// management handler
 	mgmt *managementHandlers.Handler
+
+	// dashboard handler
+	dashboard *dashboard.Handler
 
 	// ampModule is the Amp routing module for model mapping hot-reload
 	ampModule *ampmodule.AmpModule
@@ -289,6 +302,9 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	}
 	s.localPassword = optionState.localPassword
 
+	// Initialize dashboard handler
+	s.dashboard = dashboard.NewHandler(cfg)
+
 	// Home heartbeat gate: when home is enabled, block all endpoints with 503 until the
 	// subscribe-config heartbeat connection is healthy.
 	engine.Use(s.homeHeartbeatMiddleware())
@@ -372,6 +388,14 @@ func (s *Server) setupRoutes() {
 	s.engine.HEAD("/healthz", healthzHandler)
 
 	s.engine.GET("/management.html", s.serveManagementControlPanel)
+	if s.dashboard != nil && s.dashboard.IsAvailable() {
+		log.Info("dashboard handler is available, registering dashboard routes")
+		s.engine.GET("/dashboard", s.dashboard.ServeDashboard)
+		s.engine.GET("/dashboard-logs", s.dashboard.QueryLogs)
+		s.engine.GET("/dashboard-logs/:id", s.dashboard.GetLogDetail)
+	} else {
+		log.Warnf("dashboard handler not available (nil=%v, available=%v)", s.dashboard == nil, s.dashboard != nil && s.dashboard.IsAvailable())
+	}
 	openaiHandlers := openai.NewOpenAIAPIHandler(s.handlers)
 	geminiHandlers := gemini.NewGeminiAPIHandler(s.handlers)
 	geminiCLIHandlers := gemini.NewGeminiCLIAPIHandler(s.handlers)

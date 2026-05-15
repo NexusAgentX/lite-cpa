@@ -1,10 +1,11 @@
+# rebuild-trigger: 2026-05-13-v2
 FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
 COPY go.mod go.sum ./
 
-RUN go mod download
+RUN GOPROXY=https://goproxy.cn,direct go mod download
 
 COPY . .
 
@@ -16,13 +17,14 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X 'main.Version=${VERSION
 
 FROM alpine:3.23
 
-RUN apk add --no-cache tzdata
+RUN sed -i 's|https://|http://|g' /etc/apk/repositories && \
+    apk add --no-cache ca-certificates tzdata
 
 RUN mkdir /CLIProxyAPI
 
 COPY --from=builder ./app/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
 
-COPY config.example.yaml /CLIProxyAPI/config.example.yaml
+# COPY config.example.yaml /CLIProxyAPI/config.example.yaml (removed, use config.yaml)
 
 WORKDIR /CLIProxyAPI
 

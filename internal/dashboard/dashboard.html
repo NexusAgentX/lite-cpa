@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CPA Dashboard</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',monospace;background:#0d1117;color:#c9d1d9;padding:20px;font-size:14px}
+h1{color:#58a6ff;margin-bottom:16px;font-size:18px;display:flex;align-items:center;justify-content:space-between}
+.stats{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.stat{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px 18px;min-width:130px;flex:1}
+.stat .num{font-size:24px;font-weight:bold;color:#58a6ff}
+.stat .label{font-size:11px;color:#8b949e;margin-top:2px}
+.filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.filters input,.filters select{padding:6px 10px;border-radius:6px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;font-size:13px;outline:none}
+.filters input:focus,.filters select:focus{border-color:#58a6ff}
+.filters input{flex:1;min-width:160px}
+.filters select{min-width:100px}
+.filters label{color:#8b949e;font-size:12px;margin-right:2px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 10px;background:#161b22;border-bottom:1px solid #30363d;color:#8b949e;font-weight:600;position:sticky;top:0;cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:#58a6ff}
+th .sort{color:#58a6ff;margin-left:3px}
+td{padding:8px 10px;border-bottom:1px solid #21262d;white-space:nowrap}
+tr:hover td{background:#161b22}
+.token{color:#7ee787}
+.cache{color:#d2a8ff}
+.time{color:#8b949e;font-size:11px}
+.model-tag{background:#1f6feb22;color:#58a6ff;padding:1px 7px;border-radius:10px;font-size:11px}
+.proto-tag{padding:1px 7px;border-radius:10px;font-size:11px}
+.status-good{color:#7ee787}
+.status-bad{color:#f85149}
+.detail-btn{color:#58a6ff;text-decoration:underline;font-size:12px;cursor:pointer}
+.detail-btn:hover{color:#79c0ff}
+.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:100;overflow:auto}
+.modal.active{display:flex;align-items:flex-start;justify-content:center;padding:30px 15px}
+.modal-content{background:#161b22;border:1px solid #30363d;border-radius:12px;max-width:900px;width:100%;padding:20px;max-height:85vh;overflow-y:auto}
+.modal-content pre{white-space:pre-wrap;word-break:break-all;font-size:12px;line-height:1.5;background:#0d1117;padding:14px;border-radius:8px;margin-top:6px;max-height:350px;overflow:auto}
+.json-key{color:#79c0ff}
+.json-string{color:#a5d6ff}
+.json-number{color:#7ee787}
+.json-boolean{color:#d2a8ff}
+.json-null{color:#8b949e}
+.json-brace{color:#c9d1d9}
+.modal-close{float:right;background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer}
+.modal-close:hover{color:#c9d1d9}
+.detail-section{margin-bottom:14px}
+.detail-section h3{color:#58a6ff;margin-bottom:4px;font-size:13px}
+.copy-btn{float:right;padding:2px 10px;border-radius:4px;border:1px solid #30363d;background:#21262d;color:#8b949e;cursor:pointer;font-size:11px}
+.copy-btn:hover{color:#c9d1d9;border-color:#58a6ff}
+.pager{display:flex;gap:8px;align-items:center;margin-top:12px;justify-content:center}
+.pager button{padding:5px 12px;border-radius:6px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;cursor:pointer;font-size:12px}
+.pager button:hover:not(:disabled){border-color:#58a6ff;color:#58a6ff}
+.pager button:disabled{opacity:.4;cursor:not-allowed}
+.pager span{color:#8b949e;font-size:12px}
+.pager select{padding:4px 6px;border-radius:4px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;font-size:12px}
+.status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px}
+.status-dot.ok{background:#3fb950}
+.status-dot.err{background:#f85149}
+.status-dot.warn{background:#d29922}
+.empty{text-align:center;color:#8b949e;padding:40px 0;font-size:13px}
+.loading{text-align:center;color:#8b949e;padding:20px 0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading::after{content:'';display:inline-block;width:14px;height:14px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .6s linear infinite;margin-left:8px;vertical-align:middle}
+.refresh-bar{display:flex;gap:8px;align-items:center;font-size:12px;color:#8b949e}
+.refresh-bar .auto{display:flex;align-items:center;gap:4px;cursor:pointer}
+.refresh-bar .auto input{cursor:pointer}
+.auto-refresh-active{color:#7ee787}
+.warn{color:#d29922;font-size:11px;margin-left:8px}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>
+    CPA Dashboard
+    <span class="refresh-bar">
+      <span class="auto">
+        <input type="checkbox" v-model="autoRefresh" id="auto">
+        <label for="auto">{{ autoRefresh ? 'Auto ON' : 'Auto OFF' }}</label>
+      </span>
+      <button @click="load(1)" style="padding:3px 10px;border-radius:4px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;cursor:pointer;font-size:11px">Refresh</button>
+      <span v-if="lastUpdate">{{ lastUpdate }}</span>
+    </span>
+  </h1>
+
+  <div v-if="showKeyInput" style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:16px;text-align:center">
+    <p style="color:#8b949e;margin-bottom:8px;font-size:13px">{{ authError ? 'Invalid API key. Please enter a valid key:' : 'Enter API key to access dashboard:' }}</p>
+    <form @submit.prevent="saveApiKey($event.target.key.value)" style="display:flex;gap:8px;justify-content:center">
+      <input name="key" :placeholder="authError ? 'API key from config.yaml api-keys' : 'e.g. sk-123456'" style="padding:8px 12px;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#c9d1d9;font-size:14px;width:300px;outline:none" autofocus>
+      <button type="submit" style="padding:8px 20px;border-radius:6px;border:1px solid #58a6ff;background:#1f6feb;color:#fff;cursor:pointer;font-size:14px">Submit</button>
+    </form>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="num">{{ (stats.total_req || 0).toLocaleString() }}</div><div class="label">Total Requests</div></div>
+    <div class="stat"><div class="num">{{ fmtShort(stats.total_input) }}</div><div class="label">Input Tokens <span style="color:#8b949e;font-size:11px">{{ (stats.total_input || 0).toLocaleString() }}</span></div></div>
+    <div class="stat"><div class="num">{{ fmtShort(stats.total_output) }}</div><div class="label">Output Tokens <span style="color:#8b949e;font-size:11px">{{ (stats.total_output || 0).toLocaleString() }}</span></div></div>
+    <div class="stat"><div class="num">{{ fmtShort(stats.total_cache_read) }}</div><div class="label">Cache Read <span style="color:#8b949e;font-size:11px">{{ (stats.total_cache_read || 0).toLocaleString() }}</span></div></div>
+    <div class="stat"><div class="num">{{ cacheRate }}</div><div class="label">Cache Hit Rate</div></div>
+  </div>
+
+  <div class="filters">
+    <input v-model="filters.search" placeholder="Search model..." @input="onSearch">
+    <select v-model="filters.model" @change="load(1)">
+      <option value="">All Models</option>
+      <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
+    </select>
+    <select v-model="filters.protocol" @change="load(1)">
+      <option value="">All Protocols</option>
+      <option v-for="p in protocolOptions" :key="p" :value="p">{{ p }}</option>
+    </select>
+    <select v-model="filters.status" @change="load(1)">
+      <option value="">All Status</option>
+      <option value="200">200 OK</option>
+      <option value="400">400 Bad Request</option>
+      <option value="429">429 Rate Limited</option>
+      <option value="500">500 Error</option>
+    </select>
+    <input type="datetime-local" v-model="filters.time_from" @change="load(1)" style="width:190px;font-size:12px" title="From">
+    <input type="datetime-local" v-model="filters.time_to" @change="load(1)" style="width:190px;font-size:12px" title="To">
+  </div>
+
+  <table>
+    <thead><tr>
+      <th @click="toggleSort('timestamp')">Time<span class="sort" v-if="sortBy==='timestamp'">{{ sortDir==='desc'?'▼':'▲' }}</span></th>
+      <th @click="toggleSort('model')">Model<span class="sort" v-if="sortBy==='model'">{{ sortDir==='desc'?'▼':'▲' }}</span></th>
+      <th @click="toggleSort('protocol')">Proto<span class="sort" v-if="sortBy==='protocol'">{{ sortDir==='desc'?'▼':'▲' }}</span></th>
+      <th>UA</th>
+      <th @click="toggleSort('status_code')">Status<span class="sort" v-if="sortBy==='status_code'">{{ sortDir==='desc'?'▼':'▲' }}</span></th>
+      <th @click="toggleSort('input_tokens')">Input<span class="sort" v-if="sortBy==='input_tokens'">{{ sortDir==='desc'?'▼':'▲' }}</span></th>
+      <th @click="toggleSort('output_tokens')">Output<span class="sort" v-if="sortBy==='output_tokens'">{{ sortDir==='desc'?'▼':'▲' }}</span></th>
+      <th>Cache</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      <tr v-if="loading"><td colspan="9" class="loading">Loading</td></tr>
+      <tr v-else-if="!entries.length"><td colspan="9" class="empty">No records found</td></tr>
+      <tr v-for="(e, i) in entries" :key="e.id || i">
+        <td class="time">{{ e.time_str }}</td>
+        <td><span class="model-tag">{{ e.model }}</span></td>
+        <td><span class="proto-tag" :style="{background: e.protocol==='anthropic'?'#d2a8ff22':'#7ee78722',color:e.protocol==='anthropic'?'#d2a8ff':'#7ee787'}">{{ e.protocol }}</span></td>
+        <td class="time" :title="e.ua" style="max-width:100px;overflow:hidden;text-overflow:ellipsis">{{ e.ua || '-' }}</td>
+        <td><span class="status-dot" :class="e.status<300?'ok':e.status<500?'warn':'err'"></span><span :class="e.status<300?'status-good':'status-bad'">{{ e.status }}</span></td>
+        <td class="token">{{ (e.input_tokens || 0).toLocaleString() }}</td>
+        <td class="token">{{ (e.output_tokens || 0).toLocaleString() }}</td>
+        <td class="cache">{{ (e.cache_read || 0).toLocaleString() }}</td>
+        <td><span class="detail-btn" @click="showDetail(i)">view</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="pager">
+    <button @click="load(page-1)" :disabled="page<=1">Prev</button>
+    <span>Page</span>
+    <select v-model.number="page" @change="load(page)">
+      <option v-for="n in totalPages" :key="n" :value="n">{{ n }}</option>
+    </select>
+    <span>of {{ totalPages }} ({{ total }} total)</span>
+    <button @click="load(page+1)" :disabled="page>=totalPages">Next</button>
+    <span style="margin-left:8px">
+      <select v-model.number="perPage" @change="load(1)">
+        <option :value="20">20</option>
+        <option :value="50">50</option>
+        <option :value="100">100</option>
+      </select>
+    </span>
+  </div>
+
+  <div class="modal" :class="{active: detail||detailLoading}">
+    <div class="modal-content" v-if="detailLoading">
+      <button class="modal-close" @click="detail=null;detailLoading=false">x</button>
+      <div class="loading" style="padding:40px 0">Loading detail...</div>
+    </div>
+    <div class="modal-content" v-else-if="detail">
+      <button class="modal-close" @click="detail=null">x</button>
+      <div class="detail-section">
+        <h3>Info</h3>
+        <pre>Time: {{ detail.time_str }} | Model: {{ detail.model }} | Protocol: {{ detail.protocol }} | UA: {{ detail.ua || '-' }} | Duration: {{ detail.duration_ms != null ? detail.duration_ms + 'ms' : '-' }}</pre>
+      </div>
+      <div v-for="sect in detailSections" :key="sect.key" class="detail-section">
+        <h3>{{ sect.label }} <button class="copy-btn" @click="copyText(sect.text)">Copy</button></h3>
+        <pre v-html="fmtJson(sect.text)"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const {createApp, ref, reactive, computed, onMounted, watch} = Vue;
+
+createApp({
+  setup() {
+    const entries = ref([]);
+    const stats = reactive({total_req:0,total_input:0,total_output:0,total_cache_read:0,total_cache_create:0});
+    const page = ref(1);
+    const perPage = ref(20);
+    const total = ref(0);
+    const loading = ref(false);
+    const authError = ref(false);
+    const apiKey = ref(localStorage.getItem('cpa_api_key') || '');
+    const showKeyInput = ref(!apiKey.value);
+    const autoRefresh = ref(true);
+    const lastUpdate = ref('');
+    const detail = ref(null);
+    const detailLoading = ref(false);
+    const sortBy = ref('timestamp');
+    const sortDir = ref('desc');
+    const modelOptions = ref([]);
+    const protocolOptions = ref([]);
+    const filters = reactive({search:'',model:'',protocol:'',status:'',time_from:'',time_to:''});
+    let searchTimer = null;
+    let autoTimer = null;
+
+    const totalPages = computed(() => Math.ceil(total.value / perPage.value) || 1);
+    const cacheRate = computed(() => {
+      const cr = stats.total_cache_read || 0;
+      const ti = stats.total_input || 0;
+      if (cr && ti) return (cr / (cr + ti) * 100).toFixed(1) + '%';
+      if (cr && !ti) return '100%';
+      return '0%';
+    });
+    const detailSections = computed(() => {
+      const e = detail.value;
+      if (!e || !e.request_body) return [];
+      return [
+        {key:'req',label:'Request Body',text:e.request_body},
+        {key:'resp',label:'Response Body',text:e.response_body},
+        {key:'apireq',label:'API Request',text:e.api_request},
+        {key:'apiresp',label:'API Response',text:e.api_response},
+      ];
+    });
+
+    function saveApiKey(key) {
+      apiKey.value = key;
+      localStorage.setItem('cpa_api_key', key);
+      showKeyInput.value = false;
+      authError.value = false;
+      load(1);
+    }
+
+    async function load(p) {
+      if (p) page.value = p;
+      loading.value = true;
+      if (authError.value) authError.value = false;
+      try {
+        const params = new URLSearchParams({
+          page: page.value, per_page: perPage.value,
+          sort_by: sortBy.value, sort_dir: sortDir.value,
+        });
+        if (filters.search) params.set('search', filters.search);
+        if (filters.model) params.set('model', filters.model);
+        if (filters.protocol) params.set('protocol', filters.protocol);
+        if (filters.status) params.set('status_code', filters.status);
+        if (filters.time_from) params.set('time_from', filters.time_from);
+        if (filters.time_to) params.set('time_to', filters.time_to);
+        const headers = {};
+        if (apiKey.value) headers['x-api-key'] = apiKey.value;
+        const r = await fetch('/dashboard-logs?' + params.toString(), {headers});
+        if (r.status === 401 || r.status === 403) {
+          authError.value = true;
+          showKeyInput.value = true;
+          return;
+        }
+        const data = await r.json();
+        total.value = data.total || 0;
+        entries.value = data.entries || [];
+        stats.total_req = data.total_req || 0;
+        stats.total_input = data.total_input || 0;
+        stats.total_output = data.total_output || 0;
+        stats.total_cache_read = data.total_cache_read || 0;
+        stats.total_cache_create = data.total_cache_create || 0;
+        if (data.model_options) modelOptions.value = data.model_options;
+        if (data.protocol_options) protocolOptions.value = data.protocol_options;
+        lastUpdate.value = new Date().toLocaleTimeString();
+      } catch(e) {
+        console.error('load error', e);
+      } finally {
+        loading.value = false;
+      }
+    }
+
+    function toggleSort(col) {
+      if (sortBy.value === col) {
+        sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc';
+      } else {
+        sortBy.value = col;
+        sortDir.value = 'desc';
+      }
+      load(1);
+    }
+
+    function onSearch() {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => load(1), 300);
+    }
+
+    async function showDetail(i) {
+      const e = entries.value[i];
+      if (!e) return;
+      detailLoading.value = true;
+      detail.value = null;
+      try {
+        const headers = {};
+        if (apiKey.value) headers['x-api-key'] = apiKey.value;
+        const r = await fetch('/dashboard-logs/' + e.id, {headers});
+        if (!r.ok) return;
+        detail.value = await r.json();
+      } catch(e) {
+        console.error('detail error', e);
+      } finally {
+        detailLoading.value = false;
+      }
+    }
+
+    function fmtJson(s) {
+      if (!s) return '<span class="json-null">(empty)</span>';
+      try { return hlJson(JSON.parse(s)); }
+      catch(e) {
+        // Check if it's SSE-style (has event:\ndata: lines)
+        if (s.includes('event:') || s.includes('data:')) {
+          return esc(s);
+        }
+        return esc(s);
+      }
+    }
+
+    function hlJson(obj, indent) {
+      indent = indent || 0;
+      const pad = '  '.repeat(indent);
+      const pad2 = '  '.repeat(indent + 1);
+      if (obj === null) return '<span class="json-null">null</span>';
+      if (typeof obj === 'boolean') return '<span class="json-boolean">' + obj + '</span>';
+      if (typeof obj === 'number') return '<span class="json-number">' + obj + '</span>';
+      if (typeof obj === 'string') {
+        if (obj.length > 500) return '<span class="json-string">"' + esc(obj.substring(0, 500)) + '</span><span style="color:#f85149">...(' + (obj.length - 500) + ' chars)</span><span class="json-string">"</span>';
+        return '<span class="json-string">"' + esc(obj) + '"</span>';
+      }
+      if (Array.isArray(obj)) {
+        if (!obj.length) return '<span class="json-brace">[]</span>';
+        let r = '<span class="json-brace">[</span>\n';
+        obj.forEach((v, i) => { r += pad2 + hlJson(v, indent + 1); if (i < obj.length - 1) r += ','; r += '\n'; });
+        return r + pad + '<span class="json-brace">]</span>';
+      }
+      const keys = Object.keys(obj);
+      if (!keys.length) return '<span class="json-brace">{}</span>';
+      let r = '<span class="json-brace">{</span>\n';
+      keys.forEach((k, i) => {
+        r += pad2 + '<span class="json-key">"' + esc(k) + '"</span>: ' + hlJson(obj[k], indent + 1);
+        if (i < keys.length - 1) r += ',';
+        r += '\n';
+      });
+      return r + pad + '<span class="json-brace">}</span>';
+    }
+
+    let copyTimeout;
+    function copyText(text) {
+      navigator.clipboard.writeText(text || '').then(() => {
+        clearTimeout(copyTimeout);
+      });
+    }
+
+    function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function fmtShort(n) {
+      n = n || 0;
+      if (n >= 100000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return n.toLocaleString();
+    }
+
+    watch(autoRefresh, (val) => {
+      clearInterval(autoTimer);
+      if (val) autoTimer = setInterval(() => load(), 5000);
+    });
+
+    onMounted(() => {
+      load(1);
+      if (autoRefresh.value) autoTimer = setInterval(() => load(), 5000);
+    });
+
+    return {
+      entries, stats, page, perPage, total, loading, autoRefresh, lastUpdate,
+      detail, sortBy, sortDir, modelOptions, protocolOptions, filters,
+      totalPages, cacheRate, detailSections,
+      load, toggleSort, onSearch, showDetail, fmtJson, fmtShort, copyText,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

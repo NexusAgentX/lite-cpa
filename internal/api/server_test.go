@@ -239,7 +239,7 @@ func TestAmpProviderModelRoutes(t *testing.T) {
 	}
 }
 
-func TestDefaultRequestLoggerFactory_UsesResolvedLogDirectory(t *testing.T) {
+func TestDefaultRequestLoggerFactory_CreatesSqliteLogger(t *testing.T) {
 	t.Setenv("WRITABLE_PATH", "")
 	t.Setenv("writable_path", "")
 
@@ -283,18 +283,19 @@ func TestDefaultRequestLoggerFactory_UsesResolvedLogDirectory(t *testing.T) {
 	}
 
 	logger := defaultRequestLoggerFactory(cfg, configPath)
-	fileLogger, ok := logger.(*internallogging.FileRequestLogger)
+	sqlLogger, ok := logger.(*internallogging.SqliteRequestLogger)
 	if !ok {
-		t.Fatalf("expected *FileRequestLogger, got %T", logger)
+		t.Fatalf("expected *SqliteRequestLogger, got %T", logger)
 	}
 
-	errLog := fileLogger.LogRequestWithOptions(
+	// Write a log entry via LogRequestWithOptions with force=true
+	errLog := sqlLogger.LogRequestWithOptions(
 		"/v1/chat/completions",
 		http.MethodPost,
-		map[string][]string{"Content-Type": []string{"application/json"}},
-		[]byte(`{"input":"hello"}`),
+		map[string][]string{"Content-Type": {"application/json"}},
+		[]byte(`{"model":"gpt-4","input":"hello"}`),
 		http.StatusBadGateway,
-		map[string][]string{"Content-Type": []string{"application/json"}},
+		map[string][]string{"Content-Type": {"application/json"}},
 		[]byte(`{"error":"upstream failure"}`),
 		nil,
 		nil,
@@ -310,30 +311,19 @@ func TestDefaultRequestLoggerFactory_UsesResolvedLogDirectory(t *testing.T) {
 		t.Fatalf("failed to write forced error request log: %v", errLog)
 	}
 
+	// Verify the entry exists in the SQLite DB
 	authLogsDir := filepath.Join(authDir, "logs")
-	authEntries, errReadAuthDir := os.ReadDir(authLogsDir)
-	if errReadAuthDir != nil {
-		t.Fatalf("failed to read auth logs dir %s: %v", authLogsDir, errReadAuthDir)
-	}
-	foundErrorLogInAuthDir := false
-	for _, entry := range authEntries {
-		if strings.HasPrefix(entry.Name(), "error-") && strings.HasSuffix(entry.Name(), ".log") {
-			foundErrorLogInAuthDir = true
-			break
-		}
-	}
-	if !foundErrorLogInAuthDir {
-		t.Fatalf("expected forced error log in auth fallback dir %s, got entries: %+v", authLogsDir, authEntries)
+	dbPath := filepath.Join(authLogsDir, "requests.db")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		t.Fatalf("expected sqlite db at %s, but file not found", dbPath)
 	}
 
-	configLogsDir := filepath.Join(configDir, "logs")
-	configEntries, errReadConfigDir := os.ReadDir(configLogsDir)
-	if errReadConfigDir != nil && !os.IsNotExist(errReadConfigDir) {
-		t.Fatalf("failed to inspect config logs dir %s: %v", configLogsDir, errReadConfigDir)
+	// Verify config dir does NOT have the db (auth dir fallback should be used)
+	configDbPath := filepath.Join(configDir, "logs", "requests.db")
+	if _, err := os.Stat(configDbPath); err == nil {
+		t.Fatalf("unexpected sqlite db in config dir: %s", configDbPath)
 	}
-	for _, entry := range configEntries {
-		if strings.HasPrefix(entry.Name(), "error-") && strings.HasSuffix(entry.Name(), ".log") {
-			t.Fatalf("unexpected forced error log in config dir %s", configLogsDir)
-		}
-	}
+
+	// Cleanup
+	sqlLogger.Close()
 }
