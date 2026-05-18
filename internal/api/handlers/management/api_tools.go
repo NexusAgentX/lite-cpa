@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -22,9 +23,11 @@ import (
 
 const defaultAPICallTimeout = 60 * time.Second
 
-const (
-	geminiOAuthClientID     = "GEMINI_CLIENT_ID_PLACEHOLDER"
-	geminiOAuthClientSecret = "GEMINI_CLIENT_SECRET_PLACEHOLDER"
+var (
+	geminiOAuthClientID          = envOrDefault("GEMINI_CLIENT_ID", "GEMINI_CLIENT_ID_PLACEHOLDER")
+	geminiOAuthClientSecret      = envOrDefault("GEMINI_CLIENT_SECRET", "GEMINI_CLIENT_SECRET_PLACEHOLDER")
+	antigravityOAuthClientID     = envOrDefault("ANTIGRAVITY_CLIENT_ID", "ANTIGRAVITY_CLIENT_ID_PLACEHOLDER")
+	antigravityOAuthClientSecret = envOrDefault("ANTIGRAVITY_CLIENT_SECRET", "ANTIGRAVITY_CLIENT_SECRET_PLACEHOLDER")
 )
 
 var geminiOAuthScopes = []string{
@@ -33,12 +36,16 @@ var geminiOAuthScopes = []string{
 	"https://www.googleapis.com/auth/userinfo.profile",
 }
 
-const (
-	antigravityOAuthClientID     = "ANTIGRAVITY_CLIENT_ID_PLACEHOLDER"
-	antigravityOAuthClientSecret = "ANTIGRAVITY_CLIENT_SECRET_PLACEHOLDER"
-)
-
 var antigravityOAuthTokenURL = "https://oauth2.googleapis.com/token"
+
+// envOrDefault returns the value of the environment variable named by key,
+// or fallback if the variable is not set or empty.
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
 
 type apiCallRequest struct {
 	AuthIndexSnake  *string           `json:"auth_index"`

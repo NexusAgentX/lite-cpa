@@ -17,6 +17,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,19 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+// Environment helper for reading OAuth credentials from env vars with fallback.
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+var (
+	antigravityClientID     = envOrDefault("ANTIGRAVITY_CLIENT_ID", "ANTIGRAVITY_CLIENT_ID_PLACEHOLDER")
+	antigravityClientSecret = envOrDefault("ANTIGRAVITY_CLIENT_SECRET", "ANTIGRAVITY_CLIENT_SECRET_PLACEHOLDER")
+)
+
 const (
 	antigravityBaseURLDaily                = "https://daily-cloudcode-pa.googleapis.com"
 	antigravitySandboxBaseURLDaily         = "https://daily-cloudcode-pa.sandbox.googleapis.com"
@@ -47,8 +61,6 @@ const (
 	antigravityCountTokensPath             = "/v1internal:countTokens"
 	antigravityStreamPath                  = "/v1internal:streamGenerateContent"
 	antigravityGeneratePath                = "/v1internal:generateContent"
-	antigravityClientID                    = "ANTIGRAVITY_CLIENT_ID_PLACEHOLDER"
-	antigravityClientSecret                = "ANTIGRAVITY_CLIENT_SECRET_PLACEHOLDER"
 	defaultAntigravityAgent                = "antigravity/1.21.9 darwin/arm64" // fallback only; overridden at runtime by misc.AntigravityUserAgent()
 	antigravityAuthType                    = "antigravity"
 	refreshSkew                            = 3000 * time.Second

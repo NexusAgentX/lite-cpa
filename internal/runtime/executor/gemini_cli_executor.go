@@ -33,10 +33,13 @@ import (
 )
 
 const (
-	codeAssistEndpoint      = "https://cloudcode-pa.googleapis.com"
-	codeAssistVersion       = "v1internal"
-	geminiOAuthClientID     = "GEMINI_CLIENT_ID_PLACEHOLDER"
-	geminiOAuthClientSecret = "GEMINI_CLIENT_SECRET_PLACEHOLDER"
+	codeAssistEndpoint = "https://cloudcode-pa.googleapis.com"
+	codeAssistVersion  = "v1internal"
+)
+
+var (
+	geminiOAuthClientID     = envOrDefault("GEMINI_CLIENT_ID", "GEMINI_CLIENT_ID_PLACEHOLDER")
+	geminiOAuthClientSecret = envOrDefault("GEMINI_CLIENT_SECRET", "GEMINI_CLIENT_SECRET_PLACEHOLDER")
 )
 
 var geminiOAuthScopes = []string{

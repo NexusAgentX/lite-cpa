@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/auth/codex"
@@ -26,12 +27,22 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-// OAuth configuration constants for Gemini
-const (
-	ClientID            = "GEMINI_CLIENT_ID_PLACEHOLDER"
-	ClientSecret        = "GEMINI_CLIENT_SECRET_PLACEHOLDER"
+// OAuth configuration defaults for Gemini.
+// Override via the GEMINI_CLIENT_ID and GEMINI_CLIENT_SECRET environment variables.
+var (
+	ClientID            = envOrFallback("GEMINI_CLIENT_ID", "GEMINI_CLIENT_ID_PLACEHOLDER")
+	ClientSecret        = envOrFallback("GEMINI_CLIENT_SECRET", "GEMINI_CLIENT_SECRET_PLACEHOLDER")
 	DefaultCallbackPort = 8085
 )
+
+// envOrFallback returns the value of the environment variable named by key,
+// or fallback if the variable is not set or empty.
+func envOrFallback(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
 
 // OAuth scopes for Gemini authentication
 var Scopes = []string{
