@@ -392,6 +392,7 @@ func (s *Server) setupRoutes() {
 		log.Info("dashboard handler is available, registering dashboard routes")
 		s.engine.GET("/dashboard", s.dashboard.ServeDashboard)
 		s.engine.GET("/dashboard-logs", s.dashboard.QueryLogs)
+		s.engine.GET("/dashboard-logs/export", s.dashboard.ExportLogs)
 		s.engine.GET("/dashboard-logs/:id", s.dashboard.GetLogDetail)
 	} else {
 		log.Warnf("dashboard handler not available (nil=%v, available=%v)", s.dashboard == nil, s.dashboard != nil && s.dashboard.IsAvailable())

@@ -1,8 +1,10 @@
 package dashboard
 
 import (
+	"bytes"
 	"database/sql"
 	_ "embed"
+	"encoding/csv"
 	"fmt"
 	"net/http"
 	"os"
@@ -51,6 +53,30 @@ func ensureIndexes(db *sql.DB) error {
 	return err
 }
 
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var result []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
+func buildInClause(values []string) (string, []interface{}) {
+	placeholders := make([]string, len(values))
+	params := make([]interface{}, len(values))
+	for i, v := range values {
+		placeholders[i] = "?"
+		params[i] = v
+	}
+	return "(" + strings.Join(placeholders, ",") + ")", params
+}
+
 func (h *Handler) IsAvailable() bool {
 	return h.db != nil
 }
@@ -96,6 +122,7 @@ type logsResponse struct {
 	Entries          []logEntryLite `json:"entries"`
 	ModelOptions     []string       `json:"model_options,omitempty"`
 	ProtocolOptions  []string       `json:"protocol_options,omitempty"`
+	MethodOptions    []string       `json:"method_options,omitempty"`
 }
 
 func formatTime(t string) string {
@@ -128,13 +155,20 @@ func (h *Handler) QueryLogs(c *gin.Context) {
 		perPage = 20
 	}
 	search := strings.TrimSpace(q.Get("search"))
-	modelFilter := strings.TrimSpace(q.Get("model"))
-	protocolFilter := strings.TrimSpace(q.Get("protocol"))
-	statusFilter := strings.TrimSpace(q.Get("status_code"))
+	modelFilters := splitCSV(q.Get("model"))
+	protocolFilters := splitCSV(q.Get("protocol"))
+	statusFiltersStr := splitCSV(q.Get("status_code"))
+	methodFilters := splitCSV(q.Get("method"))
 	timeFrom := strings.TrimSpace(q.Get("time_from"))
 	timeTo := strings.TrimSpace(q.Get("time_to"))
 	sortBy := q.Get("sort_by")
 	sortDir := q.Get("sort_dir")
+	inputTokensMinStr := strings.TrimSpace(q.Get("input_tokens_min"))
+	inputTokensMaxStr := strings.TrimSpace(q.Get("input_tokens_max"))
+	outputTokensMinStr := strings.TrimSpace(q.Get("output_tokens_min"))
+	outputTokensMaxStr := strings.TrimSpace(q.Get("output_tokens_max"))
+	durationMinStr := strings.TrimSpace(q.Get("duration_min"))
+	durationMaxStr := strings.TrimSpace(q.Get("duration_max"))
 
 	allowedSorts := map[string]bool{
 		"timestamp": true, "model": true, "protocol": true,
@@ -153,22 +187,81 @@ func (h *Handler) QueryLogs(c *gin.Context) {
 
 	if search != "" {
 		like := "%" + search + "%"
-		whereClauses = append(whereClauses, "model LIKE ?")
-		params = append(params, like)
+		whereClauses = append(whereClauses, "(model LIKE ? OR url LIKE ? OR method LIKE ? OR user_agent LIKE ?)")
+		params = append(params, like, like, like, like)
 	}
-	if modelFilter != "" {
-		whereClauses = append(whereClauses, "model = ?")
-		params = append(params, modelFilter)
+	if len(modelFilters) > 0 {
+		clause, clauseParams := buildInClause(modelFilters)
+		whereClauses = append(whereClauses, "model IN "+clause)
+		params = append(params, clauseParams...)
 	}
-	if protocolFilter != "" {
-		whereClauses = append(whereClauses, "protocol = ?")
-		params = append(params, protocolFilter)
+	if len(protocolFilters) > 0 {
+		clause, clauseParams := buildInClause(protocolFilters)
+		whereClauses = append(whereClauses, "protocol IN "+clause)
+		params = append(params, clauseParams...)
 	}
-	if statusFilter != "" {
-		code, err := strconv.Atoi(statusFilter)
+	if len(statusFiltersStr) > 0 {
+		var codes []interface{}
+		for _, s := range statusFiltersStr {
+			code, err := strconv.Atoi(s)
+			if err == nil {
+				codes = append(codes, code)
+			}
+		}
+		if len(codes) > 0 {
+			placeholders := make([]string, len(codes))
+			for i := range codes {
+				placeholders[i] = "?"
+				params = append(params, codes[i])
+			}
+			whereClauses = append(whereClauses, "status_code IN ("+strings.Join(placeholders, ",")+")")
+		}
+	}
+	if len(methodFilters) > 0 {
+		clause, clauseParams := buildInClause(methodFilters)
+		whereClauses = append(whereClauses, "method IN "+clause)
+		params = append(params, clauseParams...)
+	}
+	if inputTokensMinStr != "" {
+		v, err := strconv.ParseInt(inputTokensMinStr, 10, 64)
 		if err == nil {
-			whereClauses = append(whereClauses, "status_code = ?")
-			params = append(params, code)
+			whereClauses = append(whereClauses, "input_tokens >= ?")
+			params = append(params, v)
+		}
+	}
+	if inputTokensMaxStr != "" {
+		v, err := strconv.ParseInt(inputTokensMaxStr, 10, 64)
+		if err == nil {
+			whereClauses = append(whereClauses, "input_tokens <= ?")
+			params = append(params, v)
+		}
+	}
+	if outputTokensMinStr != "" {
+		v, err := strconv.ParseInt(outputTokensMinStr, 10, 64)
+		if err == nil {
+			whereClauses = append(whereClauses, "output_tokens >= ?")
+			params = append(params, v)
+		}
+	}
+	if outputTokensMaxStr != "" {
+		v, err := strconv.ParseInt(outputTokensMaxStr, 10, 64)
+		if err == nil {
+			whereClauses = append(whereClauses, "output_tokens <= ?")
+			params = append(params, v)
+		}
+	}
+	if durationMinStr != "" {
+		v, err := strconv.Atoi(durationMinStr)
+		if err == nil {
+			whereClauses = append(whereClauses, "duration_ms >= ?")
+			params = append(params, v)
+		}
+	}
+	if durationMaxStr != "" {
+		v, err := strconv.Atoi(durationMaxStr)
+		if err == nil {
+			whereClauses = append(whereClauses, "duration_ms <= ?")
+			params = append(params, v)
 		}
 	}
 	if timeFrom != "" {
@@ -252,7 +345,9 @@ func (h *Handler) QueryLogs(c *gin.Context) {
 		Entries:          entries,
 	}
 
-	if page == 1 && search == "" && modelFilter == "" && protocolFilter == "" && statusFilter == "" {
+	hasNoFilters := search == "" && len(modelFilters) == 0 && len(protocolFilters) == 0 &&
+		len(statusFiltersStr) == 0 && len(methodFilters) == 0
+	if page == 1 && hasNoFilters {
 		modelRows, err := h.db.Query(`SELECT DISTINCT model FROM request_logs WHERE model != '' ORDER BY model`)
 		if err == nil {
 			var models []string
@@ -276,6 +371,18 @@ func (h *Handler) QueryLogs(c *gin.Context) {
 			}
 			protoRows.Close()
 			resp.ProtocolOptions = protocols
+		}
+		methodRows, err := h.db.Query(`SELECT DISTINCT method FROM request_logs WHERE method != '' ORDER BY method`)
+		if err == nil {
+			var methods []string
+			for methodRows.Next() {
+				var m string
+				if methodRows.Scan(&m) == nil && m != "" {
+					methods = append(methods, m)
+				}
+			}
+			methodRows.Close()
+			resp.MethodOptions = methods
 		}
 	}
 
@@ -314,4 +421,179 @@ func (h *Handler) GetLogDetail(c *gin.Context) {
 	e.APIRequest = apiReq
 	e.APIResponse = apiResp
 	c.JSON(http.StatusOK, e)
+}
+
+func (h *Handler) ExportLogs(c *gin.Context) {
+	if h.db == nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "dashboard database not available"})
+		return
+	}
+
+	q := c.Request.URL.Query()
+	search := strings.TrimSpace(q.Get("search"))
+	modelFilters := splitCSV(q.Get("model"))
+	protocolFilters := splitCSV(q.Get("protocol"))
+	statusFiltersStr := splitCSV(q.Get("status_code"))
+	methodFilters := splitCSV(q.Get("method"))
+	timeFrom := strings.TrimSpace(q.Get("time_from"))
+	timeTo := strings.TrimSpace(q.Get("time_to"))
+	sortBy := q.Get("sort_by")
+	sortDir := q.Get("sort_dir")
+	inputTokensMinStr := strings.TrimSpace(q.Get("input_tokens_min"))
+	inputTokensMaxStr := strings.TrimSpace(q.Get("input_tokens_max"))
+	outputTokensMinStr := strings.TrimSpace(q.Get("output_tokens_min"))
+	outputTokensMaxStr := strings.TrimSpace(q.Get("output_tokens_max"))
+	durationMinStr := strings.TrimSpace(q.Get("duration_min"))
+	durationMaxStr := strings.TrimSpace(q.Get("duration_max"))
+
+	allowedSorts := map[string]bool{
+		"timestamp": true, "model": true, "protocol": true,
+		"status_code": true, "duration_ms": true,
+		"input_tokens": true, "output_tokens": true,
+	}
+	if !allowedSorts[sortBy] {
+		sortBy = "timestamp"
+	}
+	if sortDir != "asc" && sortDir != "desc" {
+		sortDir = "desc"
+	}
+
+	var whereClauses []string
+	var params []interface{}
+
+	if search != "" {
+		like := "%" + search + "%"
+		whereClauses = append(whereClauses, "(model LIKE ? OR url LIKE ? OR method LIKE ? OR user_agent LIKE ?)")
+		params = append(params, like, like, like, like)
+	}
+	if len(modelFilters) > 0 {
+		clause, clauseParams := buildInClause(modelFilters)
+		whereClauses = append(whereClauses, "model IN "+clause)
+		params = append(params, clauseParams...)
+	}
+	if len(protocolFilters) > 0 {
+		clause, clauseParams := buildInClause(protocolFilters)
+		whereClauses = append(whereClauses, "protocol IN "+clause)
+		params = append(params, clauseParams...)
+	}
+	if len(statusFiltersStr) > 0 {
+		var codes []interface{}
+		for _, s := range statusFiltersStr {
+			code, err := strconv.Atoi(s)
+			if err == nil {
+				codes = append(codes, code)
+			}
+		}
+		if len(codes) > 0 {
+			placeholders := make([]string, len(codes))
+			for i := range codes {
+				placeholders[i] = "?"
+				params = append(params, codes[i])
+			}
+			whereClauses = append(whereClauses, "status_code IN ("+strings.Join(placeholders, ",")+")")
+		}
+	}
+	if len(methodFilters) > 0 {
+		clause, clauseParams := buildInClause(methodFilters)
+		whereClauses = append(whereClauses, "method IN "+clause)
+		params = append(params, clauseParams...)
+	}
+	if inputTokensMinStr != "" {
+		v, err := strconv.ParseInt(inputTokensMinStr, 10, 64)
+		if err == nil {
+			whereClauses = append(whereClauses, "input_tokens >= ?")
+			params = append(params, v)
+		}
+	}
+	if inputTokensMaxStr != "" {
+		v, err := strconv.ParseInt(inputTokensMaxStr, 10, 64)
+		if err == nil {
+			whereClauses = append(whereClauses, "input_tokens <= ?")
+			params = append(params, v)
+		}
+	}
+	if outputTokensMinStr != "" {
+		v, err := strconv.ParseInt(outputTokensMinStr, 10, 64)
+		if err == nil {
+			whereClauses = append(whereClauses, "output_tokens >= ?")
+			params = append(params, v)
+		}
+	}
+	if outputTokensMaxStr != "" {
+		v, err := strconv.ParseInt(outputTokensMaxStr, 10, 64)
+		if err == nil {
+			whereClauses = append(whereClauses, "output_tokens <= ?")
+			params = append(params, v)
+		}
+	}
+	if durationMinStr != "" {
+		v, err := strconv.Atoi(durationMinStr)
+		if err == nil {
+			whereClauses = append(whereClauses, "duration_ms >= ?")
+			params = append(params, v)
+		}
+	}
+	if durationMaxStr != "" {
+		v, err := strconv.Atoi(durationMaxStr)
+		if err == nil {
+			whereClauses = append(whereClauses, "duration_ms <= ?")
+			params = append(params, v)
+		}
+	}
+	if timeFrom != "" {
+		whereClauses = append(whereClauses, "timestamp >= ?")
+		params = append(params, timeFrom)
+	}
+	if timeTo != "" {
+		whereClauses = append(whereClauses, "timestamp <= ?")
+		params = append(params, timeTo)
+	}
+
+	where := ""
+	if len(whereClauses) > 0 {
+		where = " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+	orderClause := fmt.Sprintf(" ORDER BY %s %s", sortBy, sortDir)
+
+	rows, err := h.db.Query(`SELECT id, timestamp, url, method, status_code, model, protocol,
+		user_agent, input_tokens, output_tokens, cache_read, cache_create, duration_ms,
+		request_body, response_body
+		FROM request_logs`+where+orderClause+` LIMIT 50000`, params...)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var buf bytes.Buffer
+	buf.Write([]byte{0xef, 0xbb, 0xbf}) // BOM for Excel UTF-8 compatibility
+	writer := csv.NewWriter(&buf)
+	_ = writer.Write([]string{"ID", "Timestamp", "URL", "Method", "Status", "Model", "Protocol",
+		"UserAgent", "InputTokens", "OutputTokens", "CacheRead", "CacheCreate", "DurationMs",
+		"RequestBody", "ResponseBody"})
+
+	for rows.Next() {
+		var id, status, durationMs int
+		var ts, url, method, model, protocol, ua string
+		var inputTokens, outputTokens, cacheRead, cacheCreate int64
+		var reqBody, respBody string
+		if err := rows.Scan(&id, &ts, &url, &method, &status, &model, &protocol,
+			&ua, &inputTokens, &outputTokens, &cacheRead, &cacheCreate, &durationMs,
+			&reqBody, &respBody); err != nil {
+			continue
+		}
+		_ = writer.Write([]string{
+			strconv.Itoa(id), ts, url, method, strconv.Itoa(status), model, protocol,
+			ua, strconv.FormatInt(inputTokens, 10), strconv.FormatInt(outputTokens, 10),
+			strconv.FormatInt(cacheRead, 10), strconv.FormatInt(cacheCreate, 10),
+			strconv.Itoa(durationMs), reqBody, respBody,
+		})
+	}
+	writer.Flush()
+
+	header := c.Writer.Header()
+	header.Set("Content-Type", "text/csv; charset=utf-8")
+	header.Set("Content-Disposition", "attachment; filename=api-logs.csv")
+	header.Set("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", buf.Bytes())
 }
