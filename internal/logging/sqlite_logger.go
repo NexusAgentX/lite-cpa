@@ -331,7 +331,8 @@ func extractTokensFromSSE(body []byte) (input, output, cacheRead, cacheCreate in
 		}
 		usage := gjson.GetBytes(blob, "usage")
 		messageUsage := gjson.GetBytes(blob, "message.usage")
-		if !usage.Exists() && !messageUsage.Exists() {
+		responseUsage := gjson.GetBytes(blob, "response.usage")
+		if !usage.Exists() && !messageUsage.Exists() && !responseUsage.Exists() {
 			continue
 		}
 		if messageUsage.Exists() {
@@ -343,6 +344,17 @@ func extractTokensFromSSE(body []byte) (input, output, cacheRead, cacheCreate in
 			}
 			if v := messageUsage.Get("cache_creation_input_tokens"); v.Exists() {
 				cacheCreate = v.Int()
+			}
+		}
+		if responseUsage.Exists() {
+			if v := responseUsage.Get("input_tokens"); v.Exists() && input == 0 {
+				input = v.Int()
+			}
+			if v := responseUsage.Get("output_tokens"); v.Exists() && output == 0 {
+				output = v.Int()
+			}
+			if v := responseUsage.Get("input_tokens_details.cached_tokens"); v.Exists() && cacheRead == 0 {
+				cacheRead = v.Int()
 			}
 		}
 		if usage.Exists() {
