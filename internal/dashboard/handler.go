@@ -3,9 +3,10 @@ package dashboard
 import (
 	"bytes"
 	"database/sql"
-	_ "embed"
+	"embed"
 	"encoding/csv"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,8 +20,16 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:embed dashboard.html
-var dashboardHTML []byte
+//go:embed assets
+var dashboardAssets embed.FS
+
+func dashboardAssetsFS() fs.FS {
+	sub, err := fs.Sub(dashboardAssets, "assets")
+	if err != nil {
+		return dashboardAssets
+	}
+	return sub
+}
 
 type Handler struct {
 	dbPath string
@@ -82,7 +91,18 @@ func (h *Handler) IsAvailable() bool {
 }
 
 func (h *Handler) ServeDashboard(c *gin.Context) {
-	c.Data(http.StatusOK, "text/html; charset=utf-8", dashboardHTML)
+	data, err := fs.ReadFile(dashboardAssetsFS(), "index.html")
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "dashboard index missing"})
+		return
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+}
+
+// AssetsFS exposes the embedded static assets (everything under assets/, excluding index.html
+// which is served separately by ServeDashboard).
+func (h *Handler) AssetsFS() http.FileSystem {
+	return http.FS(dashboardAssetsFS())
 }
 
 type logEntryLite struct {
