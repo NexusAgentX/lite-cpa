@@ -108,15 +108,15 @@ type Config struct {
 	// GeminiKey defines Gemini API key configurations with optional routing overrides.
 	GeminiKey []GeminiKey `yaml:"gemini-api-key" json:"gemini-api-key"`
 
-	// Codex defines a list of Codex API key configurations as specified in the YAML configuration file.
-	CodexKey []CodexKey `yaml:"codex-api-key" json:"codex-api-key"`
+	// CodexKey defines a list of OpenAI Responses API key configurations as specified in the YAML configuration file.
+	CodexKey []CodexKey `yaml:"openai-responses" json:"openai-responses"`
 
 	// CodexHeaderDefaults configures fallback headers for Codex OAuth model requests.
 	// These are used only when the client does not send its own headers.
 	CodexHeaderDefaults CodexHeaderDefaults `yaml:"codex-header-defaults" json:"codex-header-defaults"`
 
-	// ClaudeKey defines a list of Claude API key configurations as specified in the YAML configuration file.
-	ClaudeKey []ClaudeKey `yaml:"claude-api-key" json:"claude-api-key"`
+	// ClaudeKey defines a list of Anthropic API key configurations as specified in the YAML configuration file.
+	ClaudeKey []ClaudeKey `yaml:"anthropic" json:"anthropic"`
 
 	// ClaudeHeaderDefaults configures default header values for Claude API requests.
 	// These are used as fallbacks when the client does not send its own headers.
@@ -140,7 +140,7 @@ type Config struct {
 	// gemini-cli, vertex, aistudio, antigravity, claude, codex, kimi.
 	//
 	// NOTE: This does not apply to existing per-credential model alias features under:
-	// gemini-api-key, codex-api-key, claude-api-key, openai-compatibility, vertex-api-key, and ampcode.
+	// gemini-api-key, openai-responses, anthropic, openai-compatibility, vertex-api-key, and ampcode.
 	OAuthModelAlias map[string][]OAuthModelAlias `yaml:"oauth-model-alias,omitempty" json:"oauth-model-alias,omitempty"`
 
 	// Payload defines default and override rules for provider payload parameters.

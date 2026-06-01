@@ -666,15 +666,15 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PUT("/routing/strategy", s.mgmt.PutRoutingStrategy)
 		mgmt.PATCH("/routing/strategy", s.mgmt.PutRoutingStrategy)
 
-		mgmt.GET("/claude-api-key", s.mgmt.GetClaudeKeys)
-		mgmt.PUT("/claude-api-key", s.mgmt.PutClaudeKeys)
-		mgmt.PATCH("/claude-api-key", s.mgmt.PatchClaudeKey)
-		mgmt.DELETE("/claude-api-key", s.mgmt.DeleteClaudeKey)
+		mgmt.GET("/anthropic", s.mgmt.GetClaudeKeys)
+		mgmt.PUT("/anthropic", s.mgmt.PutClaudeKeys)
+		mgmt.PATCH("/anthropic", s.mgmt.PatchClaudeKey)
+		mgmt.DELETE("/anthropic", s.mgmt.DeleteClaudeKey)
 
-		mgmt.GET("/codex-api-key", s.mgmt.GetCodexKeys)
-		mgmt.PUT("/codex-api-key", s.mgmt.PutCodexKeys)
-		mgmt.PATCH("/codex-api-key", s.mgmt.PatchCodexKey)
-		mgmt.DELETE("/codex-api-key", s.mgmt.DeleteCodexKey)
+		mgmt.GET("/openai-responses", s.mgmt.GetCodexKeys)
+		mgmt.PUT("/openai-responses", s.mgmt.PutCodexKeys)
+		mgmt.PATCH("/openai-responses", s.mgmt.PatchCodexKey)
+		mgmt.DELETE("/openai-responses", s.mgmt.DeleteCodexKey)
 
 		mgmt.GET("/openai-compatibility", s.mgmt.GetOpenAICompat)
 		mgmt.PUT("/openai-compatibility", s.mgmt.PutOpenAICompat)

@@ -275,9 +275,9 @@ func (h *Handler) DeleteGeminiKey(c *gin.Context) {
 	c.JSON(400, gin.H{"error": "missing api-key or index"})
 }
 
-// claude-api-key: []ClaudeKey
+// anthropic: []ClaudeKey
 func (h *Handler) GetClaudeKeys(c *gin.Context) {
-	c.JSON(200, gin.H{"claude-api-key": h.claudeKeysWithAuthIndex()})
+	c.JSON(200, gin.H{"anthropic": h.claudeKeysWithAuthIndex()})
 }
 func (h *Handler) PutClaudeKeys(c *gin.Context) {
 	data, err := c.GetRawData()
@@ -916,9 +916,9 @@ func (h *Handler) DeleteOAuthModelAlias(c *gin.Context) {
 	h.persist(c)
 }
 
-// codex-api-key: []CodexKey
+// openai-responses: []CodexKey
 func (h *Handler) GetCodexKeys(c *gin.Context) {
-	c.JSON(200, gin.H{"codex-api-key": h.codexKeysWithAuthIndex()})
+	c.JSON(200, gin.H{"openai-responses": h.codexKeysWithAuthIndex()})
 }
 func (h *Handler) PutCodexKeys(c *gin.Context) {
 	data, err := c.GetRawData()

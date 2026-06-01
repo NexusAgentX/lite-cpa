@@ -201,8 +201,8 @@ func TestConfigSynthesizer_ClaudeKeys(t *testing.T) {
 	if auths[0].Provider != "claude" {
 		t.Errorf("expected provider claude, got %s", auths[0].Provider)
 	}
-	if auths[0].Label != "claude-apikey" {
-		t.Errorf("expected label claude-apikey, got %s", auths[0].Label)
+	if auths[0].Label != "anthropic-apikey" {
+		t.Errorf("expected label anthropic-apikey, got %s", auths[0].Label)
 	}
 	if auths[0].Prefix != "main" {
 		t.Errorf("expected prefix main, got %s", auths[0].Prefix)
@@ -274,8 +274,8 @@ func TestConfigSynthesizer_CodexKeys(t *testing.T) {
 	if auths[0].Provider != "codex" {
 		t.Errorf("expected provider codex, got %s", auths[0].Provider)
 	}
-	if auths[0].Label != "codex-apikey" {
-		t.Errorf("expected label codex-apikey, got %s", auths[0].Label)
+	if auths[0].Label != "openai-responses-apikey" {
+		t.Errorf("expected label openai-responses-apikey, got %s", auths[0].Label)
 	}
 	if auths[0].ProxyURL != "http://proxy.local" {
 		t.Errorf("expected proxy_url http://proxy.local, got %s", auths[0].ProxyURL)

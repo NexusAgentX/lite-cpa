@@ -301,8 +301,8 @@ func TestBuildConfigChangeDetails_FlagsAndKeys(t *testing.T) {
 	expectContains(t, details, "quota-exceeded.switch-preview-model: false -> true")
 	expectContains(t, details, "quota-exceeded.antigravity-credits: false -> true")
 	expectContains(t, details, "api-keys count: 1 -> 2")
-	expectContains(t, details, "claude-api-key count: 1 -> 2")
-	expectContains(t, details, "codex-api-key count: 1 -> 2")
+	expectContains(t, details, "anthropic count: 1 -> 2")
+	expectContains(t, details, "openai-responses count: 1 -> 2")
 	expectContains(t, details, "ampcode.restrict-management-to-localhost: false -> true")
 	expectContains(t, details, "ampcode.upstream-api-key: removed")
 	expectContains(t, details, "remote-management.disable-control-panel: false -> true")
@@ -539,8 +539,8 @@ func TestBuildConfigChangeDetails_CountBranches(t *testing.T) {
 
 	changes := BuildConfigChangeDetails(oldCfg, newCfg)
 	expectContains(t, changes, "gemini-api-key count: 0 -> 1")
-	expectContains(t, changes, "claude-api-key count: 0 -> 1")
-	expectContains(t, changes, "codex-api-key count: 0 -> 1")
+	expectContains(t, changes, "anthropic count: 0 -> 1")
+	expectContains(t, changes, "openai-responses count: 0 -> 1")
 	expectContains(t, changes, "vertex-api-key count: 0 -> 1")
 }
 

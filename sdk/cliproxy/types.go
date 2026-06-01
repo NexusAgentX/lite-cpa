@@ -57,10 +57,10 @@ type APIKeyClientResult struct {
 	// VertexCompatKeyCount is the number of Vertex-compatible API keys loaded
 	VertexCompatKeyCount int
 
-	// ClaudeKeyCount is the number of Claude API keys loaded
+	// ClaudeKeyCount is the number of Anthropic API keys loaded
 	ClaudeKeyCount int
 
-	// CodexKeyCount is the number of Codex API keys loaded
+	// CodexKeyCount is the number of OpenAI Responses API keys loaded
 	CodexKeyCount int
 
 	// OpenAICompatCount is the number of OpenAI compatibility API keys loaded

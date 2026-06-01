@@ -70,6 +70,18 @@ func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_ResponseCompleted
 			totalTokens:    18,
 		},
 		{
+			name: "responses usage fields",
+			in: []string{
+				`data: {"id":"resp_responses_usage","object":"chat.completion.chunk","created":1773896263,"model":"model","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"input_tokens":12,"output_tokens":4,"total_tokens":16}}`,
+				`data: [DONE]`,
+			},
+			doneInputIndex: 1,
+			hasUsage:       true,
+			inputTokens:    12,
+			outputTokens:   4,
+			totalTokens:    16,
+		},
+		{
 			// An OpenAI-compatible streams from a buggy server might never send usage, so response.completed should
 			// still wait for [DONE] but omit the usage object entirely.
 			name: "no usage chunk",
@@ -135,6 +147,30 @@ func TestConvertOpenAIChatCompletionsResponseToOpenAIResponses_ResponseCompleted
 				t.Fatalf("unexpected response.usage.total_tokens: got %d want %d", got, tt.totalTokens)
 			}
 		})
+	}
+}
+
+func TestConvertOpenAIChatCompletionsResponseToOpenAIResponsesNonStreamMapsResponsesUsageFields(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{"id":"resp_usage","object":"chat.completion","created":1773896263,"model":"model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"input_tokens":12,"output_tokens":4,"total_tokens":16,"input_tokens_details":{"cached_tokens":3},"output_tokens_details":{"reasoning_tokens":2}}}`)
+
+	out := ConvertOpenAIChatCompletionsResponseToOpenAIResponsesNonStream(context.Background(), "model", nil, nil, raw, nil)
+
+	if got := gjson.GetBytes(out, "usage.input_tokens").Int(); got != 12 {
+		t.Fatalf("usage.input_tokens = %d, want 12; response: %s", got, string(out))
+	}
+	if got := gjson.GetBytes(out, "usage.output_tokens").Int(); got != 4 {
+		t.Fatalf("usage.output_tokens = %d, want 4; response: %s", got, string(out))
+	}
+	if got := gjson.GetBytes(out, "usage.total_tokens").Int(); got != 16 {
+		t.Fatalf("usage.total_tokens = %d, want 16; response: %s", got, string(out))
+	}
+	if got := gjson.GetBytes(out, "usage.input_tokens_details.cached_tokens").Int(); got != 3 {
+		t.Fatalf("usage.input_tokens_details.cached_tokens = %d, want 3; response: %s", got, string(out))
+	}
+	if got := gjson.GetBytes(out, "usage.output_tokens_details.reasoning_tokens").Int(); got != 2 {
+		t.Fatalf("usage.output_tokens_details.reasoning_tokens = %d, want 2; response: %s", got, string(out))
 	}
 }
 

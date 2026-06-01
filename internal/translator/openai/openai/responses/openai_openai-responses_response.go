@@ -55,11 +55,61 @@ type oaiToResponsesState struct {
 	UsageSeen        bool
 }
 
+type oaiResponsesUsage struct {
+	InputTokens     int64
+	CachedTokens    int64
+	OutputTokens    int64
+	ReasoningTokens int64
+	TotalTokens     int64
+	Seen            bool
+}
+
 // responseIDCounter provides a process-wide unique counter for synthesized response identifiers.
 var responseIDCounter uint64
 
 func emitRespEvent(event string, payload []byte) []byte {
 	return translatorcommon.SSEEventData(event, payload)
+}
+
+func extractOpenAIUsageForResponses(usage gjson.Result) oaiResponsesUsage {
+	if !usage.Exists() || !usage.IsObject() {
+		return oaiResponsesUsage{}
+	}
+
+	var out oaiResponsesUsage
+	if v := usage.Get("prompt_tokens"); v.Exists() {
+		out.InputTokens = v.Int()
+		out.Seen = true
+	} else if v := usage.Get("input_tokens"); v.Exists() {
+		out.InputTokens = v.Int()
+		out.Seen = true
+	}
+	if v := usage.Get("prompt_tokens_details.cached_tokens"); v.Exists() {
+		out.CachedTokens = v.Int()
+		out.Seen = true
+	} else if v := usage.Get("input_tokens_details.cached_tokens"); v.Exists() {
+		out.CachedTokens = v.Int()
+		out.Seen = true
+	}
+	if v := usage.Get("completion_tokens"); v.Exists() {
+		out.OutputTokens = v.Int()
+		out.Seen = true
+	} else if v := usage.Get("output_tokens"); v.Exists() {
+		out.OutputTokens = v.Int()
+		out.Seen = true
+	}
+	if v := usage.Get("completion_tokens_details.reasoning_tokens"); v.Exists() {
+		out.ReasoningTokens = v.Int()
+		out.Seen = true
+	} else if v := usage.Get("output_tokens_details.reasoning_tokens"); v.Exists() {
+		out.ReasoningTokens = v.Int()
+		out.Seen = true
+	}
+	if v := usage.Get("total_tokens"); v.Exists() {
+		out.TotalTokens = v.Int()
+		out.Seen = true
+	}
+	return out
 }
 
 func buildResponsesCompletedEvent(st *oaiToResponsesState, requestRawJSON []byte, nextSeq func() int) []byte {
@@ -243,35 +293,6 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponses(ctx context.Context, 
 		return [][]byte{}
 	}
 
-	if usage := root.Get("usage"); usage.Exists() {
-		if v := usage.Get("prompt_tokens"); v.Exists() {
-			st.PromptTokens = v.Int()
-			st.UsageSeen = true
-		}
-		if v := usage.Get("prompt_tokens_details.cached_tokens"); v.Exists() {
-			st.CachedTokens = v.Int()
-			st.UsageSeen = true
-		}
-		if v := usage.Get("completion_tokens"); v.Exists() {
-			st.CompletionTokens = v.Int()
-			st.UsageSeen = true
-		} else if v := usage.Get("output_tokens"); v.Exists() {
-			st.CompletionTokens = v.Int()
-			st.UsageSeen = true
-		}
-		if v := usage.Get("output_tokens_details.reasoning_tokens"); v.Exists() {
-			st.ReasoningTokens = v.Int()
-			st.UsageSeen = true
-		} else if v := usage.Get("completion_tokens_details.reasoning_tokens"); v.Exists() {
-			st.ReasoningTokens = v.Int()
-			st.UsageSeen = true
-		}
-		if v := usage.Get("total_tokens"); v.Exists() {
-			st.TotalTokens = v.Int()
-			st.UsageSeen = true
-		}
-	}
-
 	nextSeq := func() int { st.Seq++; return st.Seq }
 	allocOutputIndex := func() int {
 		ix := st.NextOutputIx
@@ -321,6 +342,15 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponses(ctx context.Context, 
 		inprog, _ = sjson.SetBytes(inprog, "response.created_at", st.Created)
 		out = append(out, emitRespEvent("response.in_progress", inprog))
 		st.Started = true
+	}
+
+	if parsedUsage := extractOpenAIUsageForResponses(root.Get("usage")); parsedUsage.Seen {
+		st.PromptTokens = parsedUsage.InputTokens
+		st.CachedTokens = parsedUsage.CachedTokens
+		st.CompletionTokens = parsedUsage.OutputTokens
+		st.TotalTokens = parsedUsage.TotalTokens
+		st.ReasoningTokens = parsedUsage.ReasoningTokens
+		st.UsageSeen = true
 	}
 
 	stopReasoning := func(text string) {
@@ -775,18 +805,20 @@ func ConvertOpenAIChatCompletionsResponseToOpenAIResponsesNonStream(_ context.Co
 
 	// usage mapping
 	if usage := root.Get("usage"); usage.Exists() {
-		// Map common tokens
-		if usage.Get("prompt_tokens").Exists() || usage.Get("completion_tokens").Exists() || usage.Get("total_tokens").Exists() {
-			resp, _ = sjson.SetBytes(resp, "usage.input_tokens", usage.Get("prompt_tokens").Int())
-			if d := usage.Get("prompt_tokens_details.cached_tokens"); d.Exists() {
-				resp, _ = sjson.SetBytes(resp, "usage.input_tokens_details.cached_tokens", d.Int())
+		if parsedUsage := extractOpenAIUsageForResponses(usage); parsedUsage.Seen {
+			resp, _ = sjson.SetBytes(resp, "usage.input_tokens", parsedUsage.InputTokens)
+			if usage.Get("prompt_tokens_details.cached_tokens").Exists() || usage.Get("input_tokens_details.cached_tokens").Exists() {
+				resp, _ = sjson.SetBytes(resp, "usage.input_tokens_details.cached_tokens", parsedUsage.CachedTokens)
 			}
-			resp, _ = sjson.SetBytes(resp, "usage.output_tokens", usage.Get("completion_tokens").Int())
-			// Reasoning tokens not available in Chat Completions; set only if present under output_tokens_details
-			if d := usage.Get("output_tokens_details.reasoning_tokens"); d.Exists() {
-				resp, _ = sjson.SetBytes(resp, "usage.output_tokens_details.reasoning_tokens", d.Int())
+			resp, _ = sjson.SetBytes(resp, "usage.output_tokens", parsedUsage.OutputTokens)
+			if usage.Get("completion_tokens_details.reasoning_tokens").Exists() || usage.Get("output_tokens_details.reasoning_tokens").Exists() {
+				resp, _ = sjson.SetBytes(resp, "usage.output_tokens_details.reasoning_tokens", parsedUsage.ReasoningTokens)
 			}
-			resp, _ = sjson.SetBytes(resp, "usage.total_tokens", usage.Get("total_tokens").Int())
+			total := parsedUsage.TotalTokens
+			if total == 0 {
+				total = parsedUsage.InputTokens + parsedUsage.OutputTokens
+			}
+			resp, _ = sjson.SetBytes(resp, "usage.total_tokens", total)
 		} else {
 			// Fallback to raw usage object if structure differs
 			resp, _ = sjson.SetBytes(resp, "usage", usage.Value())

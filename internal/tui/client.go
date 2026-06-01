@@ -290,14 +290,14 @@ func (c *Client) GetGeminiKeys() ([]map[string]any, error) {
 	return c.getWrappedKeyList("/v0/management/gemini-api-key", "gemini-api-key")
 }
 
-// GetClaudeKeys fetches Claude API keys.
+// GetClaudeKeys fetches Anthropic API keys.
 func (c *Client) GetClaudeKeys() ([]map[string]any, error) {
-	return c.getWrappedKeyList("/v0/management/claude-api-key", "claude-api-key")
+	return c.getWrappedKeyList("/v0/management/anthropic", "anthropic")
 }
 
-// GetCodexKeys fetches Codex API keys.
+// GetCodexKeys fetches OpenAI Responses API keys.
 func (c *Client) GetCodexKeys() ([]map[string]any, error) {
-	return c.getWrappedKeyList("/v0/management/codex-api-key", "codex-api-key")
+	return c.getWrappedKeyList("/v0/management/openai-responses", "openai-responses")
 }
 
 // GetVertexKeys fetches Vertex API keys.

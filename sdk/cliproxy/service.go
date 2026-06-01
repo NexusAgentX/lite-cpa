@@ -1273,6 +1273,7 @@ func (s *Service) refreshModelRegistrationForAuth(current *coreauth.Auth) bool {
 	}
 	s.registerModelsForAuth(current)
 	s.coreManager.ReconcileRegistryModelStates(context.Background(), current.ID)
+	s.coreManager.RefreshSchedulerEntry(current.ID)
 
 	latest, ok := s.latestAuthForModelRegistration(current.ID)
 	if !ok || latest.Disabled {

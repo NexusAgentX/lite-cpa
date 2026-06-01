@@ -97,7 +97,7 @@ func TestDeleteClaudeKey_DeletesEmptyBaseURLWhenExplicitlyProvided(t *testing.T)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodDelete, "/v0/management/claude-api-key?api-key=shared-key&base-url=", nil)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v0/management/anthropic?api-key=shared-key&base-url=", nil)
 
 	h.DeleteClaudeKey(c)
 
@@ -159,7 +159,7 @@ func TestDeleteCodexKey_RequiresBaseURLWhenAPIKeyDuplicated(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodDelete, "/v0/management/codex-api-key?api-key=shared-key", nil)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/v0/management/openai-responses?api-key=shared-key", nil)
 
 	h.DeleteCodexKey(c)
 

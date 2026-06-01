@@ -136,7 +136,7 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 
 	// Claude keys (do not print key material)
 	if len(oldCfg.ClaudeKey) != len(newCfg.ClaudeKey) {
-		changes = append(changes, fmt.Sprintf("claude-api-key count: %d -> %d", len(oldCfg.ClaudeKey), len(newCfg.ClaudeKey)))
+		changes = append(changes, fmt.Sprintf("anthropic count: %d -> %d", len(oldCfg.ClaudeKey), len(newCfg.ClaudeKey)))
 	} else {
 		for i := range oldCfg.ClaudeKey {
 			o := oldCfg.ClaudeKey[i]
@@ -182,7 +182,7 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 
 	// Codex keys (do not print key material)
 	if len(oldCfg.CodexKey) != len(newCfg.CodexKey) {
-		changes = append(changes, fmt.Sprintf("codex-api-key count: %d -> %d", len(oldCfg.CodexKey), len(newCfg.CodexKey)))
+		changes = append(changes, fmt.Sprintf("openai-responses count: %d -> %d", len(oldCfg.CodexKey), len(newCfg.CodexKey)))
 	} else {
 		for i := range oldCfg.CodexKey {
 			o := oldCfg.CodexKey[i]
