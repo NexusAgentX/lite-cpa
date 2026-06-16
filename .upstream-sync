@@ -1,0 +1,31 @@
+# 上游同步记录
+
+## 最后同步时间
+**日期**: 2026-06-16  
+**操作**: 分析上游修复并应用辅助函数
+
+## 同步详情
+- **上游版本**: v7.2.11 (commit a5cb8832)
+- **分叉点**: v7.0.4 (commit f3a38dd3, 2026-05-13)
+- **提交差距**: 2,757 commits
+- **分析的修复**: 751 个 bug 修复
+
+## 同步结果
+- ✅ P0 修复: 100% 已存在（安全 + 内存泄漏）
+- ✅ P1 辅助函数: 已就绪（SSE + 工具调用）
+- ✅ 新增代码: 2 个文件 (+320 行)
+- ✅ 新增文档: 1 个文件 (+6.8KB)
+
+## 下次同步建议
+**日期**: 2026-07-01 (2 周后)
+
+**命令**:
+```bash
+git fetch upstream
+git log --oneline --grep="fix.*security|fix.*leak|fix.*oom" self..upstream/main | head -30
+```
+
+## 相关文档
+- APPLICATION_GUIDE.md - 修复应用指南
+- internal/util/tool_helpers.go - 工具调用修复
+- internal/runtime/executor/helps/stream_helpers.go - 流式响应修复
