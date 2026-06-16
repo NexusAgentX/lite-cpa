@@ -104,22 +104,6 @@ func (c *Client) getJSON(path string) (map[string]any, error) {
 	return result, nil
 }
 
-// postJSON sends a JSON body via POST and checks for errors.
-func (c *Client) postJSON(path string, body any) error {
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	_, code, err := c.doRequest("POST", path, strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return err
-	}
-	if code >= 400 {
-		return fmt.Errorf("HTTP %d", code)
-	}
-	return nil
-}
-
 // GetConfig fetches the parsed config.
 func (c *Client) GetConfig() (map[string]any, error) {
 	return c.getJSON("/v0/management/config")
@@ -137,46 +121,6 @@ func (c *Client) GetConfigYAML() (string, error) {
 // PutConfigYAML uploads new config.yaml content.
 func (c *Client) PutConfigYAML(yamlContent string) error {
 	_, err := c.put("/v0/management/config.yaml", strings.NewReader(yamlContent))
-	return err
-}
-
-// GetAuthFiles lists auth credential files.
-// API returns {"files": [...]}.
-func (c *Client) GetAuthFiles() ([]map[string]any, error) {
-	wrapper, err := c.getJSON("/v0/management/auth-files")
-	if err != nil {
-		return nil, err
-	}
-	return extractList(wrapper, "files")
-}
-
-// DeleteAuthFile deletes a single auth file by name.
-func (c *Client) DeleteAuthFile(name string) error {
-	query := url.Values{}
-	query.Set("name", name)
-	path := "/v0/management/auth-files?" + query.Encode()
-	_, code, err := c.doRequest("DELETE", path, nil)
-	if err != nil {
-		return err
-	}
-	if code >= 400 {
-		return fmt.Errorf("delete failed (HTTP %d)", code)
-	}
-	return nil
-}
-
-// ToggleAuthFile enables or disables an auth file.
-func (c *Client) ToggleAuthFile(name string, disabled bool) error {
-	body, _ := json.Marshal(map[string]any{"name": name, "disabled": disabled})
-	_, err := c.patch("/v0/management/auth-files/status", strings.NewReader(string(body)))
-	return err
-}
-
-// PatchAuthFileFields updates editable fields on an auth file.
-func (c *Client) PatchAuthFileFields(name string, fields map[string]any) error {
-	fields["name"] = name
-	body, _ := json.Marshal(fields)
-	_, err := c.patch("/v0/management/auth-files/fields", strings.NewReader(string(body)))
 	return err
 }
 
@@ -348,21 +292,6 @@ func (c *Client) GetDebug() (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-// GetAuthStatus polls the OAuth session status.
-// Returns status ("wait", "ok", "error") and optional error message.
-func (c *Client) GetAuthStatus(state string) (string, string, error) {
-	query := url.Values{}
-	query.Set("state", state)
-	path := "/v0/management/get-auth-status?" + query.Encode()
-	wrapper, err := c.getJSON(path)
-	if err != nil {
-		return "", "", err
-	}
-	status := getString(wrapper, "status")
-	errMsg := getString(wrapper, "error")
-	return status, errMsg, nil
 }
 
 // ----- Config field update methods -----

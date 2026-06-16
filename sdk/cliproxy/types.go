@@ -11,29 +11,6 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
 )
 
-// TokenClientProvider loads clients backed by stored authentication tokens.
-// It provides an interface for loading authentication tokens from various sources
-// and creating clients for AI service providers.
-type TokenClientProvider interface {
-	// Load loads token-based clients from the configured source.
-	//
-	// Parameters:
-	//   - ctx: The context for the loading operation
-	//   - cfg: The application configuration
-	//
-	// Returns:
-	//   - *TokenClientResult: The result containing loaded clients
-	//   - error: An error if loading fails
-	Load(ctx context.Context, cfg *config.Config) (*TokenClientResult, error)
-}
-
-// TokenClientResult represents clients generated from persisted tokens.
-// It contains metadata about the loading operation and the number of successful authentications.
-type TokenClientResult struct {
-	// SuccessfulAuthed is the number of successfully authenticated clients.
-	SuccessfulAuthed int
-}
-
 // APIKeyClientProvider loads clients backed directly by configured API keys.
 // It provides an interface for loading API key-based clients for various AI service providers.
 type APIKeyClientProvider interface {
@@ -67,7 +44,7 @@ type APIKeyClientResult struct {
 	OpenAICompatCount int
 }
 
-// WatcherFactory creates a watcher for configuration and token changes.
+// WatcherFactory creates a watcher for configuration changes.
 // The reload callback receives the updated configuration when changes are detected.
 //
 // Parameters:
@@ -115,8 +92,8 @@ func (w *WatcherWrapper) SetConfig(cfg *config.Config) {
 	w.setConfig(cfg)
 }
 
-// DispatchRuntimeAuthUpdate forwards runtime auth updates (e.g., websocket providers)
-// into the watcher-managed auth update queue when available.
+// DispatchRuntimeAuthUpdate forwards runtime auth updates into the watcher-managed
+// auth update queue when available.
 // Returns true if the update was enqueued successfully.
 func (w *WatcherWrapper) DispatchRuntimeAuthUpdate(update watcher.AuthUpdate) bool {
 	if w == nil || w.dispatchRuntimeUpdate == nil {

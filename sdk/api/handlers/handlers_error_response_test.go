@@ -86,8 +86,8 @@ func TestEnrichAuthSelectionError_DefaultsTo503WithContext(t *testing.T) {
 	if !strings.Contains(got.Message, "model=claude-sonnet-4-6") {
 		t.Fatalf("message missing model context: %q", got.Message)
 	}
-	if !strings.Contains(got.Message, "/v0/management/auth-files") {
-		t.Fatalf("message missing management hint: %q", got.Message)
+	if !strings.Contains(got.Message, "anthropic API-key configuration") {
+		t.Fatalf("message missing API-key hint: %q", got.Message)
 	}
 }
 

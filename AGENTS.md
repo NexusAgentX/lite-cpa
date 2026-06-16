@@ -1,110 +1,106 @@
 # AGENTS.md
 
-Go 1.26+ proxy server providing OpenAI/Gemini/Claude/Codex compatible APIs with OAuth and round-robin load balancing.
+Go 1.26+ API-key upstream gateway providing OpenAI/Gemini/Claude/OpenAI Responses compatible APIs with management APIs, protocol translation, retries, cooldowns, and round-robin/fill-first load balancing.
 
-**本项目已通过 Docker 部署到生产环境。所有代码改动提交后必须验证 Docker 构建通过。**
+This project is deployed to production with Docker. Every committed code change must verify that the Docker build passes.
 
 ## Repository
+
 - GitHub: https://github.com/router-for-me/CLIProxyAPI
 
 ## Docker Deployment (Production)
 
 ```bash
-# 构建并启动（推荐）
 docker compose up -d --build
-
-# 仅构建镜像
 docker compose build
-
-# 查看日志
 docker compose logs -f
-
-# 重启服务
 docker compose restart
-
-# 停止服务
 docker compose down
 ```
 
-### Docker 关键配置
+### Docker Configuration
 
-| 环境变量 | 用途 | 默认值 |
+| Environment variable | Purpose | Default |
 |---|---|---|
-| `CLI_PROXY_IMAGE` | 镜像标签 | `eceasy/cli-proxy-api:latest` |
-| `CLI_PROXY_CONFIG_PATH` | 配置文件挂载路径 | `./config.yaml` |
-| `CLI_PROXY_AUTH_PATH` | OAuth 认证数据挂载路径 | `./auths` |
-| `CLI_PROXY_LOG_PATH` | 日志挂载路径 | `./logs` |
+| `CLI_PROXY_IMAGE` | Image tag | `eceasy/cli-proxy-api:latest` |
+| `CLI_PROXY_CONFIG_PATH` | Config file mount path | `./config.yaml` |
+| `CLI_PROXY_AUTH_PATH` | Legacy writable state mount path | `./auths` |
+| `CLI_PROXY_LOG_PATH` | Log mount path | `./logs` |
 
-### 暴露端口
+### Exposed Ports
 
-| 端口 | 用途 |
+| Port | Purpose |
 |---|---|
-| `8317` | 主 API 服务 |
-| `8085` | 管理后台 / 转发 |
-| `1455` | 预留 |
-| `54545` | 预留 |
-| `51121` | 预留 |
-| `11451` | 预留 |
+| `8317` | Main API service |
+| `8085` | Management UI / management API |
+| `1455` | Reserved |
+| `54545` | Reserved |
+| `51121` | Reserved |
+| `11451` | Reserved |
 
-### 生产注意事项
-- `config.yaml` 通过 Docker volume 挂载，修改后需 `docker compose restart`
-- OAuth 认证数据持久化在 `auths/` 目录，通过 volume 挂载
-- 日志持久化在 `logs/` 目录
-- 时区默认 `Asia/Shanghai`，通过 `TZ` 环境变量配置
-- Dockerfile 使用多阶段构建（`golang:1.26-alpine` → `alpine:3.23`），最终镜像约 20MB
+### Production Notes
+
+- `config.yaml` is mounted into the container at `/CLIProxyAPI/config.yaml`; restart the container after direct config edits.
+- Upstream credentials are config-backed API keys.
+- Logs are persisted in the mounted `logs/` directory.
+- The default timezone is `Asia/Shanghai`; override it with `TZ` when needed.
+- Dockerfile uses a multi-stage build (`golang:1.26-alpine` to `alpine:3.23`).
 
 ## Local Development
 
 ```bash
-gofmt -w .                    # Format (required after Go changes)
+gofmt -w .                                           # Format after Go changes
 go build -o cli-proxy-api ./cmd/server              # Build
-go run ./cmd/server                                  # Run dev server
-go test ./...                                        # Run all tests
-go test -v -run TestName ./path/to/pkg               # Run single test
-go build -o test-output ./cmd/server && rm test-output  # Verify compile
+go run ./cmd/server --config config.yaml            # Run dev server
+go test ./...                                       # Run all tests
+go test -v -run TestName ./path/to/pkg              # Run one test
+go build -o test-output ./cmd/server && rm test-output
+docker compose build                                # Required before committing
 ```
-- Common flags: `--config <path>`, `--tui`, `--standalone`, `--local-model`, `--no-browser`, `--oauth-callback-port <port>`
+
+Common flags: `--config <path>`, `--tui`, `--standalone`, `--local-model`, `--vertex-import <path>`, `--vertex-import-prefix <prefix>`.
 
 ## Config
-- Default config: `config.yaml` (挂载到容器内的 `/CLIProxyAPI/config.yaml`)
-- `.env` is auto-loaded from the working directory
-- Auth material defaults under `auths/` (挂载到容器内的 `/root/.cli-proxy-api`)
-- Storage backends: file-based default; optional Postgres/git/object store (`PGSTORE_*`, `GITSTORE_*`, `OBJECTSTORE_*`)
+
+- Default config: `config.yaml`.
+- `.env` is auto-loaded from the working directory.
+- Supported config-backed upstreams: `gemini-api-key`, `vertex-api-key`, `anthropic`, `openai-responses`, and `openai-compatibility`.
+- Storage backends remain available for config/state persistence when enabled with `PGSTORE_*`, `GITSTORE_*`, or `OBJECTSTORE_*`.
 
 ## Architecture
-- `cmd/server/` — Server entrypoint
-- `internal/api/` — Gin HTTP API (routes, middleware, modules)
-- `internal/api/modules/amp/` — Amp integration (Amp-style routes + reverse proxy)
-- `internal/thinking/` — Main thinking/reasoning pipeline. `ApplyThinking()` (apply.go) parses suffixes (`suffix.go`, suffix overrides body), normalizes config to canonical `ThinkingConfig` (`types.go`), normalizes and validates centrally (`validate.go`/`convert.go`), then applies provider-specific output via `ProviderApplier`. Do not break this "canonical representation → per-provider translation" architecture.
-- `internal/runtime/executor/` — Per-provider runtime executors (incl. Codex WebSocket)
-- `internal/translator/` — Provider protocol translators (and shared `common`)
-- `internal/registry/` — Model registry + remote updater (`StartModelsUpdater`); `--local-model` disables remote updates
-- `internal/store/` — Storage implementations and secret resolution
-- `internal/managementasset/` — Config snapshots and management assets
-- `internal/cache/` — Request signature caching
-- `internal/watcher/` — Config hot-reload and watchers
-- `internal/wsrelay/` — WebSocket relay sessions
-- `internal/usage/` — Usage and token accounting
-- `internal/tui/` — Bubbletea terminal UI (`--tui`, `--standalone`)
-- `sdk/cliproxy/` — Embeddable SDK entry (service/builder/watchers/pipeline)
-- `test/` — Cross-module integration tests
-- `Dockerfile` — 多阶段构建，最终基于 `alpine:3.23`，约 20MB
-- `docker-compose.yml` — 生产部署编排，含 config/auths/logs 卷挂载
+
+- `cmd/server/` - Server entrypoint and CLI flags.
+- `internal/api/` - Gin HTTP API, management routes, middleware, and protocol entrypoints.
+- `internal/thinking/` - Thinking/reasoning pipeline. Preserve the canonical `ThinkingConfig` to provider-specific translation architecture.
+- `internal/runtime/executor/` - Runtime executors for retained API-key upstream providers and their unit tests.
+- `internal/translator/` - Provider protocol translators and shared translator helpers.
+- `internal/registry/` - Model registry and remote updater (`StartModelsUpdater`); `--local-model` disables remote updates.
+- `internal/store/` - Storage implementations and secret resolution.
+- `internal/managementasset/` - Config snapshots and management assets.
+- `internal/cache/` - Request signature caching.
+- `internal/watcher/` - Config hot reload and API-key auth synthesis.
+- `internal/usage/` - Usage and token accounting.
+- `internal/tui/` - Bubbletea terminal UI (`--tui`, `--standalone`).
+- `sdk/cliproxy/` - Embeddable SDK entrypoint, service builder, watcher wrapper, and runtime pipeline.
+- `test/` - Cross-module integration tests.
+- `Dockerfile` - Multi-stage production image build.
+- `docker-compose.yml` - Production deployment orchestration with config/log mounts.
 
 ## Code Conventions
-- Keep changes small and simple (KISS)
-- Comments in English only
-- If editing code that already contains non-English comments, translate them to English (don't add new non-English comments)
-- For user-visible strings, keep the existing language used in that file/area
-- New Markdown docs should be in English unless the file is explicitly language-specific (e.g. `README_CN.md`)
-- As a rule, do not make standalone changes to `internal/translator/`. You may modify it only as part of broader changes elsewhere.
-- If a task requires changing only `internal/translator/`, run `gh repo view --json viewerPermission -q .viewerPermission` to confirm you have `WRITE`, `MAINTAIN`, or `ADMIN`. If you do, you may proceed; otherwise, file a GitHub issue including the goal, rationale, and the intended implementation code, then stop further work.
-- `internal/runtime/executor/` should contain executors and their unit tests only. Place any helper/supporting files under `internal/runtime/executor/helps/`.
-- Follow `gofmt`; keep imports goimports-style; wrap errors with context where helpful
-- Do not use `log.Fatal`/`log.Fatalf` (terminates the process); prefer returning errors and logging via logrus
-- Shadowed variables: use method suffix (`errStart := server.Start()`)
-- Wrap defer errors: `defer func() { if err := f.Close(); err != nil { log.Errorf(...) } }()`
-- Use logrus structured logging; avoid leaking secrets/tokens in logs
-- Avoid panics in HTTP handlers; prefer logged errors and meaningful HTTP status codes
-- **Docker 构建验证：`docker compose build` 必须通过后才能提交代码**
-- Timeouts are allowed only during credential acquisition; after an upstream connection is established, do not set timeouts for any subsequent network behavior. Intentional exceptions that must remain allowed are the Codex websocket liveness deadlines in `internal/runtime/executor/codex_websockets_executor.go`, the wsrelay session deadlines in `internal/wsrelay/session.go`, the management APICall timeout in `internal/api/handlers/management/api_tools.go`, and the `cmd/fetch_antigravity_models` utility timeouts
+
+- Keep changes small and simple.
+- Comments in English only.
+- If editing code that already contains non-English comments, translate them to English.
+- For user-visible strings, keep the existing language used in that file or area.
+- New Markdown docs should be in English unless the file is explicitly language-specific.
+- As a rule, do not make standalone changes to `internal/translator/`. If a task requires changing only `internal/translator/`, run `gh repo view --json viewerPermission -q .viewerPermission` and proceed only with `WRITE`, `MAINTAIN`, or `ADMIN`; otherwise file a GitHub issue and stop.
+- `internal/runtime/executor/` should contain executors and their unit tests only. Place helper/supporting files under `internal/runtime/executor/helps/`.
+- Follow `gofmt`; keep imports goimports-style.
+- Wrap errors with context where helpful.
+- Do not use `log.Fatal` or `log.Fatalf`; return errors and log through logrus.
+- Avoid shadowed variables; use method suffixes such as `errStart := server.Start()`.
+- Wrap defer errors: `defer func() { if err := f.Close(); err != nil { log.Errorf(...) } }()`.
+- Use logrus structured logging and avoid leaking secrets or tokens.
+- Avoid panics in HTTP handlers; prefer logged errors and meaningful HTTP status codes.
+- Docker build verification is required before committing: `docker compose build`.
+- Timeouts are allowed only during credential acquisition. After an upstream connection is established, do not set timeouts for subsequent network behavior. Intentional exceptions that must remain allowed are the OpenAI Responses websocket liveness deadlines in `internal/runtime/executor/codex_websockets_executor.go`, the management APICall timeout in `internal/api/handlers/management/api_tools.go`, and utility-only fetch command timeouts.

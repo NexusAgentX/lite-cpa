@@ -353,25 +353,10 @@ func (m configTabModel) parseConfig(cfg map[string]any) []configField {
 		fields = append(fields, configField{"Routing Strategy", "routing/strategy", "string", "", nil})
 	}
 
-	// WebSocket auth
-	fields = append(fields, configField{"WebSocket Auth", "ws-auth", "bool", fmt.Sprintf("%v", getBool(cfg, "ws-auth")), nil})
-
-	// AMP settings
-	if amp, ok := cfg["ampcode"].(map[string]any); ok {
-		upstreamURL := getString(amp, "upstream-url")
-		upstreamAPIKey := getString(amp, "upstream-api-key")
-		fields = append(fields, configField{"AMP Upstream URL", "ampcode/upstream-url", "string", upstreamURL, upstreamURL})
-		fields = append(fields, configField{"AMP Upstream API Key", "ampcode/upstream-api-key", "string", maskIfNotEmpty(upstreamAPIKey), upstreamAPIKey})
-		fields = append(fields, configField{"AMP Restrict Mgmt Localhost", "ampcode/restrict-management-to-localhost", "bool", fmt.Sprintf("%v", getBool(amp, "restrict-management-to-localhost")), nil})
-	}
-
 	return fields
 }
 
 func fieldSection(apiPath string) string {
-	if strings.HasPrefix(apiPath, "ampcode/") {
-		return T("section_ampcode")
-	}
 	if strings.HasPrefix(apiPath, "quota-exceeded/") {
 		return T("section_quota")
 	}
@@ -383,8 +368,6 @@ func fieldSection(apiPath string) string {
 		return T("section_server")
 	case "logging-to-file", "logs-max-total-size-mb", "error-logs-max-files", "usage-statistics-enabled", "request-log":
 		return T("section_logging")
-	case "ws-auth":
-		return T("section_websocket")
 	default:
 		return T("section_other")
 	}

@@ -113,7 +113,7 @@ func TestMatchProvider(t *testing.T) {
 	}
 }
 
-func TestSnapshotCoreAuths_ConfigAndAuthFiles(t *testing.T) {
+func TestSnapshotCoreAuths_IgnoresAuthFiles(t *testing.T) {
 	authDir := t.TempDir()
 	metadata := map[string]any{
 		"type":       "gemini",
@@ -140,30 +140,20 @@ func TestSnapshotCoreAuths_ConfigAndAuthFiles(t *testing.T) {
 				Headers:        map[string]string{"X-Req": "1"},
 			},
 		},
-		OAuthExcludedModels: map[string][]string{
-			"gemini-cli": {"Foo", "bar"},
-		},
 	}
 
 	w := &Watcher{authDir: authDir}
 	w.SetConfig(cfg)
 
 	auths := w.SnapshotCoreAuths()
-	if len(auths) != 4 {
-		t.Fatalf("expected 4 auth entries (1 config + 1 primary + 2 virtual), got %d", len(auths))
+	if len(auths) != 1 {
+		t.Fatalf("expected only the config API key auth entry, got %d", len(auths))
 	}
 
 	var geminiAPIKeyAuth *coreauth.Auth
-	var geminiPrimary *coreauth.Auth
-	virtuals := make([]*coreauth.Auth, 0)
 	for _, a := range auths {
-		switch {
-		case a.Provider == "gemini" && a.Attributes["api_key"] == "g-key":
+		if a.Provider == "gemini" && a.Attributes["api_key"] == "g-key" {
 			geminiAPIKeyAuth = a
-		case a.Attributes["gemini_virtual_primary"] == "true":
-			geminiPrimary = a
-		case strings.TrimSpace(a.Attributes["gemini_virtual_parent"]) != "":
-			virtuals = append(virtuals, a)
 		}
 	}
 	if geminiAPIKeyAuth == nil {
@@ -175,35 +165,6 @@ func TestSnapshotCoreAuths_ConfigAndAuthFiles(t *testing.T) {
 	}
 	if geminiAPIKeyAuth.Attributes["auth_kind"] != "apikey" {
 		t.Fatalf("expected auth_kind=apikey, got %s", geminiAPIKeyAuth.Attributes["auth_kind"])
-	}
-
-	if geminiPrimary == nil {
-		t.Fatal("expected primary gemini-cli auth from file")
-	}
-	if !geminiPrimary.Disabled || geminiPrimary.Status != coreauth.StatusDisabled {
-		t.Fatal("expected primary gemini-cli auth to be disabled when virtual auths are synthesized")
-	}
-	expectedOAuthHash := diff.ComputeExcludedModelsHash([]string{"Foo", "bar"})
-	if geminiPrimary.Attributes["excluded_models_hash"] != expectedOAuthHash {
-		t.Fatalf("expected OAuth excluded hash %s, got %s", expectedOAuthHash, geminiPrimary.Attributes["excluded_models_hash"])
-	}
-	if geminiPrimary.Attributes["auth_kind"] != "oauth" {
-		t.Fatalf("expected auth_kind=oauth, got %s", geminiPrimary.Attributes["auth_kind"])
-	}
-
-	if len(virtuals) != 2 {
-		t.Fatalf("expected 2 virtual auths, got %d", len(virtuals))
-	}
-	for _, v := range virtuals {
-		if v.Attributes["gemini_virtual_parent"] != geminiPrimary.ID {
-			t.Fatalf("virtual auth missing parent link to %s", geminiPrimary.ID)
-		}
-		if v.Attributes["excluded_models_hash"] != expectedOAuthHash {
-			t.Fatalf("expected virtual excluded hash %s, got %s", expectedOAuthHash, v.Attributes["excluded_models_hash"])
-		}
-		if v.Status != coreauth.StatusActive {
-			t.Fatalf("expected virtual auth to be active, got %s", v.Status)
-		}
 	}
 }
 
@@ -655,7 +616,7 @@ func TestAuthFileUnchangedEmptyAndMissing(t *testing.T) {
 	}
 }
 
-func TestReloadClientsCachesAuthHashes(t *testing.T) {
+func TestReloadClientsIgnoresAuthFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	authFile := filepath.Join(tmpDir, "one.json")
 	if err := os.WriteFile(authFile, []byte(`{"type":"demo"}`), 0o644); err != nil {
@@ -666,12 +627,12 @@ func TestReloadClientsCachesAuthHashes(t *testing.T) {
 		config:  &config.Config{AuthDir: tmpDir},
 	}
 
-	w.reloadClients(true, nil, false)
+	w.reloadClients(false)
 
 	w.clientsMutex.RLock()
 	defer w.clientsMutex.RUnlock()
-	if len(w.lastAuthHashes) != 1 {
-		t.Fatalf("expected hash cache for one auth file, got %d", len(w.lastAuthHashes))
+	if len(w.lastAuthHashes) != 0 {
+		t.Fatalf("expected auth files to be ignored, got %d cached hashes", len(w.lastAuthHashes))
 	}
 }
 
@@ -691,21 +652,21 @@ func TestReloadClientsLogsConfigDiffs(t *testing.T) {
 	w.config = newCfg
 	w.clientsMutex.Unlock()
 
-	w.reloadClients(false, nil, false)
+	w.reloadClients(false)
 }
 
 func TestReloadClientsHandlesNilConfig(t *testing.T) {
 	w := &Watcher{}
-	w.reloadClients(true, nil, false)
+	w.reloadClients(false)
 }
 
-func TestReloadClientsFiltersProvidersWithNilCurrentAuths(t *testing.T) {
+func TestReloadClientsHandlesNilCurrentAuths(t *testing.T) {
 	tmp := t.TempDir()
 	w := &Watcher{
 		authDir: tmp,
 		config:  &config.Config{AuthDir: tmp},
 	}
-	w.reloadClients(false, []string{"match"}, false)
+	w.reloadClients(false)
 	if w.currentAuths != nil && len(w.currentAuths) != 0 {
 		t.Fatalf("expected currentAuths to be nil or empty, got %d", len(w.currentAuths))
 	}
@@ -773,7 +734,7 @@ func TestStopConfigReloadTimerSafeWhenNil(t *testing.T) {
 	w.stopConfigReloadTimer()
 }
 
-func TestHandleEventRemovesAuthFile(t *testing.T) {
+func TestHandleEventIgnoresAuthFileRemoval(t *testing.T) {
 	tmpDir := t.TempDir()
 	authFile := filepath.Join(tmpDir, "remove.json")
 	if err := os.WriteFile(authFile, []byte(`{"type":"demo"}`), 0o644); err != nil {
@@ -800,8 +761,8 @@ func TestHandleEventRemovesAuthFile(t *testing.T) {
 	if atomic.LoadInt32(&reloads) != 0 {
 		t.Fatalf("expected no reload callback for auth removal, got %d", reloads)
 	}
-	if _, ok := w.lastAuthHashes[w.normalizeAuthPath(authFile)]; ok {
-		t.Fatal("expected hash entry to be removed")
+	if _, ok := w.lastAuthHashes[w.normalizeAuthPath(authFile)]; !ok {
+		t.Fatal("expected auth hash entry to remain because auth files are no longer watched")
 	}
 }
 
@@ -1124,7 +1085,7 @@ func TestHandleEventRemoveUnknownFileIgnored(t *testing.T) {
 	}
 }
 
-func TestHandleEventRemoveKnownFileDeletes(t *testing.T) {
+func TestHandleEventRemoveKnownFileIgnored(t *testing.T) {
 	tmpDir := t.TempDir()
 	authDir := filepath.Join(tmpDir, "auth")
 	if err := os.MkdirAll(authDir, 0o755); err != nil {
@@ -1150,8 +1111,8 @@ func TestHandleEventRemoveKnownFileDeletes(t *testing.T) {
 	if atomic.LoadInt32(&reloads) != 0 {
 		t.Fatalf("expected known remove to avoid global reload, got %d", reloads)
 	}
-	if _, ok := w.lastAuthHashes[w.normalizeAuthPath(authFile)]; ok {
-		t.Fatal("expected known auth hash to be deleted")
+	if _, ok := w.lastAuthHashes[w.normalizeAuthPath(authFile)]; !ok {
+		t.Fatal("expected known auth hash to remain because auth files are ignored")
 	}
 }
 
@@ -1315,18 +1276,13 @@ func TestReloadConfigUsesMirroredAuthDir(t *testing.T) {
 	}
 }
 
-func TestReloadConfigFiltersAffectedOAuthProviders(t *testing.T) {
+func TestReloadConfigDropsOAuthProviderAuths(t *testing.T) {
 	tmpDir := t.TempDir()
 	authDir := filepath.Join(tmpDir, "auth")
 	if err := os.MkdirAll(authDir, 0o755); err != nil {
 		t.Fatalf("failed to create auth dir: %v", err)
 	}
 	configPath := filepath.Join(tmpDir, "config.yaml")
-
-	// Ensure SnapshotCoreAuths yields a provider that is NOT affected, so we can assert it survives.
-	if err := os.WriteFile(filepath.Join(authDir, "provider-b.json"), []byte(`{"type":"provider-b","email":"b@example.com"}`), 0o644); err != nil {
-		t.Fatalf("failed to write auth file: %v", err)
-	}
 
 	oldCfg := &config.Config{
 		AuthDir: authDir,
@@ -1354,6 +1310,7 @@ func TestReloadConfigFiltersAffectedOAuthProviders(t *testing.T) {
 		lastAuthHashes: make(map[string]string),
 		currentAuths: map[string]*coreauth.Auth{
 			"a": {ID: "a", Provider: "provider-a"},
+			"b": {ID: "b", Provider: "provider-b"},
 		},
 	}
 	w.SetConfig(oldCfg)
@@ -1366,18 +1323,13 @@ func TestReloadConfigFiltersAffectedOAuthProviders(t *testing.T) {
 	defer w.clientsMutex.RUnlock()
 	for _, auth := range w.currentAuths {
 		if auth != nil && auth.Provider == "provider-a" {
-			t.Fatal("expected affected provider auth to be filtered")
+			t.Fatal("expected OAuth provider auth to be removed")
 		}
 	}
-	foundB := false
 	for _, auth := range w.currentAuths {
 		if auth != nil && auth.Provider == "provider-b" {
-			foundB = true
-			break
+			t.Fatal("expected unrelated OAuth provider auth to be removed because auth files are ignored")
 		}
-	}
-	if !foundB {
-		t.Fatal("expected unaffected provider auth to remain")
 	}
 }
 
@@ -1442,7 +1394,7 @@ func TestReloadConfigTriggersCallbackForMaxRetryCredentialsChange(t *testing.T) 
 	}
 }
 
-func TestStartFailsWhenAuthDirMissing(t *testing.T) {
+func TestStartIgnoresMissingAuthDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte("auth_dir: "+filepath.Join(tmpDir, "missing-auth")+"\n"), 0o644); err != nil {
@@ -1460,8 +1412,8 @@ func TestStartFailsWhenAuthDirMissing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := w.Start(ctx); err == nil {
-		t.Fatal("expected Start to fail for missing auth dir")
+	if err := w.Start(ctx); err != nil {
+		t.Fatalf("expected Start to ignore missing auth dir, got %v", err)
 	}
 }
 
@@ -1640,7 +1592,7 @@ func TestDispatchLoopExitsWhenQueueNilAndContextCanceled(t *testing.T) {
 	}
 }
 
-func TestReloadClientsFiltersOAuthProvidersWithoutRescan(t *testing.T) {
+func TestReloadClientsDropsStaleFileAuthsWithoutRescan(t *testing.T) {
 	tmp := t.TempDir()
 	w := &Watcher{
 		authDir: tmp,
@@ -1652,12 +1604,15 @@ func TestReloadClientsFiltersOAuthProvidersWithoutRescan(t *testing.T) {
 		lastAuthHashes: map[string]string{"cached": "hash"},
 	}
 
-	w.reloadClients(false, []string{"match"}, false)
+	w.reloadClients(false)
 
 	w.clientsMutex.RLock()
 	defer w.clientsMutex.RUnlock()
 	if _, ok := w.currentAuths["a"]; ok {
-		t.Fatal("expected filtered provider to be removed")
+		t.Fatal("expected stale auth to be removed")
+	}
+	if _, ok := w.currentAuths["b"]; ok {
+		t.Fatal("expected unrelated stale auth to be removed")
 	}
 	if len(w.lastAuthHashes) != 1 {
 		t.Fatalf("expected existing hash cache to be retained, got %d", len(w.lastAuthHashes))

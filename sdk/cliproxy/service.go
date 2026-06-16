@@ -1,13 +1,12 @@
 // Package cliproxy provides the core service implementation for the CLI Proxy API.
-// It includes service lifecycle management, authentication handling, file watching,
-// and integration with various AI service providers through a unified interface.
+// It includes service lifecycle management, API key-backed upstream loading,
+// config watching, and provider execution through a unified interface.
 package cliproxy
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,9 +19,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher/diff"
-	"github.com/router-for-me/CLIProxyAPI/v7/internal/wsrelay"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
@@ -44,9 +41,6 @@ type Service struct {
 
 	// configPath is the path to the configuration file.
 	configPath string
-
-	// tokenProvider handles loading token-based clients.
-	tokenProvider TokenClientProvider
 
 	// apiKeyProvider handles loading API key-based clients.
 	apiKeyProvider APIKeyClientProvider
@@ -81,9 +75,6 @@ type Service struct {
 	// authQueueStop cancels the auth update queue processing.
 	authQueueStop context.CancelFunc
 
-	// authManager handles legacy authentication operations.
-	authManager *sdkAuth.Manager
-
 	// accessManager handles request authentication providers.
 	accessManager *sdkaccess.Manager
 
@@ -92,9 +83,6 @@ type Service struct {
 
 	// shutdownOnce ensures shutdown is called only once.
 	shutdownOnce sync.Once
-
-	// wsGateway manages websocket Gemini providers.
-	wsGateway *wsrelay.Manager
 
 	homeClient *home.Client
 	homeCancel context.CancelFunc
@@ -107,16 +95,6 @@ type Service struct {
 //   - plugin: The usage plugin to register
 func (s *Service) RegisterUsagePlugin(plugin usage.Plugin) {
 	usage.RegisterPlugin(plugin)
-}
-
-// newDefaultAuthManager creates a default authentication manager with all supported providers.
-func newDefaultAuthManager() *sdkAuth.Manager {
-	return sdkAuth.NewManager(
-		sdkAuth.GetTokenStore(),
-		sdkAuth.NewGeminiAuthenticator(),
-		sdkAuth.NewCodexAuthenticator(),
-		sdkAuth.NewClaudeAuthenticator(),
-	)
 }
 
 func (s *Service) ensureAuthUpdateQueue(ctx context.Context) {
@@ -209,77 +187,6 @@ func (s *Service) handleAuthUpdate(ctx context.Context, update watcher.AuthUpdat
 	}
 }
 
-func (s *Service) ensureWebsocketGateway() {
-	if s == nil {
-		return
-	}
-	if s.wsGateway != nil {
-		return
-	}
-	opts := wsrelay.Options{
-		Path:           "/v1/ws",
-		OnConnected:    s.wsOnConnected,
-		OnDisconnected: s.wsOnDisconnected,
-		LogDebugf:      log.Debugf,
-		LogInfof:       log.Infof,
-		LogWarnf:       log.Warnf,
-	}
-	s.wsGateway = wsrelay.NewManager(opts)
-}
-
-func (s *Service) wsOnConnected(channelID string) {
-	if s == nil || channelID == "" {
-		return
-	}
-	if !strings.HasPrefix(strings.ToLower(channelID), "aistudio-") {
-		return
-	}
-	if s.coreManager != nil {
-		if existing, ok := s.coreManager.GetByID(channelID); ok && existing != nil {
-			if !existing.Disabled && existing.Status == coreauth.StatusActive {
-				return
-			}
-		}
-	}
-	now := time.Now().UTC()
-	auth := &coreauth.Auth{
-		ID:         channelID,  // keep channel identifier as ID
-		Provider:   "aistudio", // logical provider for switch routing
-		Label:      channelID,  // display original channel id
-		Status:     coreauth.StatusActive,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		Attributes: map[string]string{"runtime_only": "true"},
-		Metadata:   map[string]any{"email": channelID}, // metadata drives logging and usage tracking
-	}
-	log.Infof("websocket provider connected: %s", channelID)
-	s.emitAuthUpdate(context.Background(), watcher.AuthUpdate{
-		Action: watcher.AuthUpdateActionAdd,
-		ID:     auth.ID,
-		Auth:   auth,
-	})
-}
-
-func (s *Service) wsOnDisconnected(channelID string, reason error) {
-	if s == nil || channelID == "" {
-		return
-	}
-	if reason != nil {
-		if strings.Contains(reason.Error(), "replaced by new connection") {
-			log.Infof("websocket provider replaced: %s", channelID)
-			return
-		}
-		log.Warnf("websocket provider disconnected: %s (%v)", channelID, reason)
-	} else {
-		log.Infof("websocket provider disconnected: %s", channelID)
-	}
-	ctx := context.Background()
-	s.emitAuthUpdate(ctx, watcher.AuthUpdate{
-		Action: watcher.AuthUpdateActionDelete,
-		ID:     channelID,
-	})
-}
-
 func (s *Service) applyCoreAuthAddOrUpdate(ctx context.Context, auth *coreauth.Auth) {
 	if s == nil || s.coreManager == nil || auth == nil || auth.ID == "" {
 		return
@@ -342,10 +249,6 @@ func (s *Service) applyCoreAuthRemoval(ctx context.Context, id string) {
 		existing.Status = coreauth.StatusDisabled
 		if _, err := s.coreManager.Update(ctx, existing); err != nil {
 			log.Errorf("failed to disable auth %s: %v", id, err)
-		}
-		if strings.EqualFold(strings.TrimSpace(existing.Provider), "codex") {
-			executor.CloseCodexWebsocketSessionsForAuthID(existing.ID, "auth_removed")
-			s.ensureExecutorsForAuth(existing)
 		}
 	}
 }
@@ -420,19 +323,8 @@ func (s *Service) ensureExecutorsForAuthWithMode(a *coreauth.Auth, forceReplace 
 		s.coreManager.RegisterExecutor(executor.NewGeminiExecutor(s.cfg))
 	case "vertex":
 		s.coreManager.RegisterExecutor(executor.NewGeminiVertexExecutor(s.cfg))
-	case "gemini-cli":
-		s.coreManager.RegisterExecutor(executor.NewGeminiCLIExecutor(s.cfg))
-	case "aistudio":
-		if s.wsGateway != nil {
-			s.coreManager.RegisterExecutor(executor.NewAIStudioExecutor(s.cfg, a.ID, s.wsGateway))
-		}
-		return
-	case "antigravity":
-		s.coreManager.RegisterExecutor(executor.NewAntigravityExecutor(s.cfg))
 	case "claude":
 		s.coreManager.RegisterExecutor(executor.NewClaudeExecutor(s.cfg))
-	case "kimi":
-		s.coreManager.RegisterExecutor(executor.NewKimiExecutor(s.cfg))
 	default:
 		providerKey := strings.ToLower(strings.TrimSpace(a.Provider))
 		if providerKey == "" {
@@ -459,14 +351,7 @@ func (s *Service) rebindExecutors() {
 		return
 	}
 	auths := s.coreManager.List()
-	reboundCodex := false
 	for _, auth := range auths {
-		if auth != nil && strings.EqualFold(strings.TrimSpace(auth.Provider), "codex") {
-			if reboundCodex {
-				continue
-			}
-			reboundCodex = true
-		}
 		s.ensureExecutorsForAuthWithMode(auth, true)
 	}
 }
@@ -553,7 +438,6 @@ func (s *Service) applyConfigUpdate(newCfg *config.Config) {
 	s.cfgMu.Unlock()
 	if s.coreManager != nil {
 		s.coreManager.SetConfig(newCfg)
-		s.coreManager.SetOAuthModelAlias(newCfg.OAuthModelAlias)
 	}
 	s.rebindExecutors()
 }
@@ -582,10 +466,6 @@ func (s *Service) registerHomeExecutors() {
 	s.coreManager.RegisterExecutor(executor.NewClaudeExecutor(s.cfg))
 	s.coreManager.RegisterExecutor(executor.NewGeminiExecutor(s.cfg))
 	s.coreManager.RegisterExecutor(executor.NewGeminiVertexExecutor(s.cfg))
-	s.coreManager.RegisterExecutor(executor.NewGeminiCLIExecutor(s.cfg))
-	s.coreManager.RegisterExecutor(executor.NewAIStudioExecutor(s.cfg, "", s.wsGateway))
-	s.coreManager.RegisterExecutor(executor.NewAntigravityExecutor(s.cfg))
-	s.coreManager.RegisterExecutor(executor.NewKimiExecutor(s.cfg))
 	s.coreManager.RegisterExecutor(executor.NewOpenAICompatExecutor("openai-compatibility", s.cfg))
 }
 
@@ -767,29 +647,9 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}()
 
-	if !homeEnabled {
-		if errEnsureAuthDir := s.ensureAuthDir(); errEnsureAuthDir != nil {
-			return errEnsureAuthDir
-		}
-	}
-
 	s.applyRetryConfig(s.cfg)
 
-	if s.coreManager != nil && !homeEnabled {
-		if errLoad := s.coreManager.Load(ctx); errLoad != nil {
-			log.Warnf("failed to load auth store: %v", errLoad)
-		}
-	}
-
 	if !homeEnabled {
-		tokenResult, err := s.tokenProvider.Load(ctx, s.cfg)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			return err
-		}
-		if tokenResult == nil {
-			tokenResult = &TokenClientResult{}
-		}
-
 		apiKeyResult, err := s.apiKeyProvider.Load(ctx, s.cfg)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return err
@@ -799,38 +659,10 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 	}
 
-	// legacy clients removed; no caches to refresh
-
-	// handlers no longer depend on legacy clients; pass nil slice initially
 	s.server = api.NewServer(s.cfg, s.coreManager, s.accessManager, s.configPath, s.serverOptions...)
-
-	if s.authManager == nil {
-		s.authManager = newDefaultAuthManager()
-	}
 
 	if homeEnabled {
 		s.startHomeSubscriber(ctx)
-	}
-
-	s.ensureWebsocketGateway()
-	if s.server != nil && s.wsGateway != nil {
-		s.server.AttachWebsocketRoute(s.wsGateway.Path(), s.wsGateway.Handler())
-		s.server.SetWebsocketAuthChangeHandler(func(oldEnabled, newEnabled bool) {
-			if oldEnabled == newEnabled {
-				return
-			}
-			if !oldEnabled && newEnabled {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if errStop := s.wsGateway.Stop(ctx); errStop != nil {
-					log.Warnf("failed to reset websocket connections after ws-auth change %t -> %t: %v", oldEnabled, newEnabled, errStop)
-					return
-				}
-				log.Debugf("ws-auth enabled; existing websocket sessions terminated to enforce authentication")
-				return
-			}
-			log.Debugf("ws-auth disabled; existing websocket sessions remain connected")
-		})
 	}
 
 	if homeEnabled {
@@ -919,14 +751,7 @@ func (s *Service) Run(ctx context.Context) error {
 		if errStart := watcherWrapper.Start(watcherCtx); errStart != nil {
 			return fmt.Errorf("cliproxy: failed to start watcher: %w", errStart)
 		}
-		log.Info("file watcher started for config and auth directory changes")
-	}
-
-	// Prefer core auth manager auto refresh if available.
-	if s.coreManager != nil && !homeEnabled {
-		interval := 15 * time.Minute
-		s.coreManager.StartAutoRefresh(context.Background(), interval)
-		log.Infof("core auth auto-refresh started (interval=%s)", interval)
+		log.Info("file watcher started for config changes")
 	}
 
 	select {
@@ -967,8 +792,6 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		}
 		home.ClearCurrent()
 
-		// legacy refresh loop removed; only stopping core auth manager below
-
 		if s.watcherCancel != nil {
 			s.watcherCancel()
 		}
@@ -979,14 +802,6 @@ func (s *Service) Shutdown(ctx context.Context) error {
 			if err := s.watcher.Stop(); err != nil {
 				log.Errorf("failed to stop file watcher: %v", err)
 				shutdownErr = err
-			}
-		}
-		if s.wsGateway != nil {
-			if err := s.wsGateway.Stop(ctx); err != nil {
-				log.Errorf("failed to stop websocket gateway: %v", err)
-				if shutdownErr == nil {
-					shutdownErr = err
-				}
 			}
 		}
 		if s.authQueueStop != nil {
@@ -1000,8 +815,6 @@ func (s *Service) Shutdown(ctx context.Context) error {
 				shutdownErr = errShutdownPprof
 			}
 		}
-
-		// no legacy clients to persist
 
 		if s.server != nil {
 			shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -1017,24 +830,6 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		usage.StopDefault()
 	})
 	return shutdownErr
-}
-
-func (s *Service) ensureAuthDir() error {
-	info, err := os.Stat(s.cfg.AuthDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			if mkErr := os.MkdirAll(s.cfg.AuthDir, 0o755); mkErr != nil {
-				return fmt.Errorf("cliproxy: failed to create auth directory %s: %w", s.cfg.AuthDir, mkErr)
-			}
-			log.Infof("created missing auth directory: %s", s.cfg.AuthDir)
-			return nil
-		}
-		return fmt.Errorf("cliproxy: error checking auth directory %s: %w", s.cfg.AuthDir, err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("cliproxy: auth path exists but is not a directory: %s", s.cfg.AuthDir)
-	}
-	return nil
 }
 
 // registerModelsForAuth (re)binds provider models in the global registry using the core auth ID as client identifier.

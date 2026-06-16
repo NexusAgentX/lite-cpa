@@ -173,48 +173,51 @@ func TestHomeEnabledHidesManagementEndpointsAndControlPanel(t *testing.T) {
 	})
 }
 
-func TestAmpProviderModelRoutes(t *testing.T) {
+func TestTrimmedCLISpecificRoutesAreNotRegistered(t *testing.T) {
 	testCases := []struct {
-		name         string
-		path         string
-		wantStatus   int
-		wantContains string
+		name   string
+		method string
+		path   string
 	}{
 		{
-			name:         "openai root models",
-			path:         "/api/provider/openai/models",
-			wantStatus:   http.StatusOK,
-			wantContains: `"object":"list"`,
+			name:   "amp provider route",
+			method: http.MethodGet,
+			path:   "/api/provider/openai/models",
 		},
 		{
-			name:         "groq root models",
-			path:         "/api/provider/groq/models",
-			wantStatus:   http.StatusOK,
-			wantContains: `"object":"list"`,
+			name:   "amp management route",
+			method: http.MethodGet,
+			path:   "/api/user",
 		},
 		{
-			name:         "openai models",
-			path:         "/api/provider/openai/v1/models",
-			wantStatus:   http.StatusOK,
-			wantContains: `"object":"list"`,
+			name:   "codex direct route",
+			method: http.MethodPost,
+			path:   "/backend-api/codex/responses",
 		},
 		{
-			name:         "anthropic models",
-			path:         "/api/provider/anthropic/v1/models",
-			wantStatus:   http.StatusOK,
-			wantContains: `"data"`,
+			name:   "gemini cli internal route",
+			method: http.MethodPost,
+			path:   "/v1internal:generateContent",
 		},
 		{
-			name:         "google models v1",
-			path:         "/api/provider/google/v1/models",
-			wantStatus:   http.StatusOK,
-			wantContains: `"models"`,
+			name:   "anthropic oauth callback",
+			method: http.MethodGet,
+			path:   "/anthropic/callback",
 		},
 		{
-			name:         "google models v1beta",
-			path:         "/api/provider/google/v1beta/models",
-			wantStatus:   http.StatusOK,
-			wantContains: `"models"`,
+			name:   "codex oauth callback",
+			method: http.MethodGet,
+			path:   "/codex/callback",
+		},
+		{
+			name:   "google oauth callback",
+			method: http.MethodGet,
+			path:   "/google/callback",
+		},
+		{
+			name:   "antigravity oauth callback",
+			method: http.MethodGet,
+			path:   "/antigravity/callback",
 		},
 	}
 
@@ -223,17 +226,45 @@ func TestAmpProviderModelRoutes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := newTestServer(t)
 
-			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
 			req.Header.Set("Authorization", "Bearer test-key")
 
 			rr := httptest.NewRecorder()
 			server.engine.ServeHTTP(rr, req)
 
-			if rr.Code != tc.wantStatus {
-				t.Fatalf("unexpected status code for %s: got %d want %d; body=%s", tc.path, rr.Code, tc.wantStatus, rr.Body.String())
+			if rr.Code != http.StatusNotFound {
+				t.Fatalf("status for %s %s = %d, want %d; body=%s", tc.method, tc.path, rr.Code, http.StatusNotFound, rr.Body.String())
 			}
-			if body := rr.Body.String(); !strings.Contains(body, tc.wantContains) {
-				t.Fatalf("response body for %s missing %q: %s", tc.path, tc.wantContains, body)
+		})
+	}
+}
+
+func TestTrimmedManagementRoutesAreNotRegistered(t *testing.T) {
+	t.Setenv("MANAGEMENT_PASSWORD", "test-management-key")
+
+	testCases := []string{
+		"/v0/management/ampcode",
+		"/v0/management/auth-files",
+		"/v0/management/anthropic-auth-url",
+		"/v0/management/codex-auth-url",
+		"/v0/management/gemini-cli-auth-url",
+		"/v0/management/antigravity-auth-url",
+		"/v0/management/kimi-auth-url",
+		"/v0/management/get-auth-status",
+	}
+
+	for _, path := range testCases {
+		path := path
+		t.Run(path, func(t *testing.T) {
+			server := newTestServer(t)
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Header.Set("Authorization", "Bearer test-management-key")
+
+			rr := httptest.NewRecorder()
+			server.engine.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusNotFound {
+				t.Fatalf("status for %s = %d, want %d; body=%s", path, rr.Code, http.StatusNotFound, rr.Body.String())
 			}
 		})
 	}

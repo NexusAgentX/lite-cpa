@@ -1,6 +1,6 @@
 // Package cliproxy provides the core service implementation for the CLI Proxy API.
-// It includes service lifecycle management, authentication handling, file watching,
-// and integration with various AI service providers through a unified interface.
+// It includes service lifecycle management, API key-backed upstream loading,
+// config watching, and provider execution through a unified interface.
 package cliproxy
 
 import (
@@ -11,7 +11,6 @@ import (
 	configaccess "github.com/router-for-me/CLIProxyAPI/v7/internal/access/config_access"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/api"
 	sdkaccess "github.com/router-for-me/CLIProxyAPI/v7/sdk/access"
-	sdkAuth "github.com/router-for-me/CLIProxyAPI/v7/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/config"
 )
@@ -26,9 +25,6 @@ type Builder struct {
 	// configPath is the path to the configuration file.
 	configPath string
 
-	// tokenProvider handles loading token-based clients.
-	tokenProvider TokenClientProvider
-
 	// apiKeyProvider handles loading API key-based clients.
 	apiKeyProvider APIKeyClientProvider
 
@@ -37,9 +33,6 @@ type Builder struct {
 
 	// hooks provides lifecycle callbacks.
 	hooks Hooks
-
-	// authManager handles legacy authentication operations.
-	authManager *sdkAuth.Manager
 
 	// accessManager handles request authentication providers.
 	accessManager *sdkaccess.Manager
@@ -97,12 +90,6 @@ func (b *Builder) WithConfigPath(path string) *Builder {
 	return b
 }
 
-// WithTokenClientProvider overrides the provider responsible for token-backed clients.
-func (b *Builder) WithTokenClientProvider(provider TokenClientProvider) *Builder {
-	b.tokenProvider = provider
-	return b
-}
-
 // WithAPIKeyClientProvider overrides the provider responsible for API key-backed clients.
 func (b *Builder) WithAPIKeyClientProvider(provider APIKeyClientProvider) *Builder {
 	b.apiKeyProvider = provider
@@ -118,12 +105,6 @@ func (b *Builder) WithWatcherFactory(factory WatcherFactory) *Builder {
 // WithHooks registers lifecycle hooks executed around service startup.
 func (b *Builder) WithHooks(h Hooks) *Builder {
 	b.hooks = h
-	return b
-}
-
-// WithAuthManager overrides the authentication manager used for token lifecycle operations.
-func (b *Builder) WithAuthManager(mgr *sdkAuth.Manager) *Builder {
-	b.authManager = mgr
 	return b
 }
 
@@ -173,11 +154,6 @@ func (b *Builder) Build() (*Service, error) {
 		return nil, fmt.Errorf("cliproxy: configuration path is required")
 	}
 
-	tokenProvider := b.tokenProvider
-	if tokenProvider == nil {
-		tokenProvider = NewFileTokenClientProvider()
-	}
-
 	apiKeyProvider := b.apiKeyProvider
 	if apiKeyProvider == nil {
 		apiKeyProvider = NewAPIKeyClientProvider()
@@ -186,11 +162,6 @@ func (b *Builder) Build() (*Service, error) {
 	watcherFactory := b.watcherFactory
 	if watcherFactory == nil {
 		watcherFactory = defaultWatcherFactory
-	}
-
-	authManager := b.authManager
-	if authManager == nil {
-		authManager = newDefaultAuthManager()
 	}
 
 	accessManager := b.accessManager
@@ -203,11 +174,6 @@ func (b *Builder) Build() (*Service, error) {
 
 	coreManager := b.coreManager
 	if coreManager == nil {
-		tokenStore := sdkAuth.GetTokenStore()
-		if dirSetter, ok := tokenStore.(interface{ SetBaseDir(string) }); ok && b.cfg != nil {
-			dirSetter.SetBaseDir(b.cfg.AuthDir)
-		}
-
 		strategy := ""
 		sessionAffinity := false
 		sessionAffinityTTL := time.Hour
@@ -237,21 +203,18 @@ func (b *Builder) Build() (*Service, error) {
 			})
 		}
 
-		coreManager = coreauth.NewManager(tokenStore, selector, nil)
+		coreManager = coreauth.NewManager(nil, selector, nil)
 	}
 	// Attach a default RoundTripper provider so providers can opt-in per-auth transports.
 	coreManager.SetRoundTripperProvider(newDefaultRoundTripperProvider())
 	coreManager.SetConfig(b.cfg)
-	coreManager.SetOAuthModelAlias(b.cfg.OAuthModelAlias)
 
 	service := &Service{
 		cfg:            b.cfg,
 		configPath:     b.configPath,
-		tokenProvider:  tokenProvider,
 		apiKeyProvider: apiKeyProvider,
 		watcherFactory: watcherFactory,
 		hooks:          b.hooks,
-		authManager:    authManager,
 		accessManager:  accessManager,
 		coreManager:    coreManager,
 		serverOptions:  append([]api.ServerOption(nil), b.serverOptions...),
