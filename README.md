@@ -20,7 +20,7 @@ Personal account-pool sign-in flows, tool-specific reverse proxy routes, credent
 
 ## Quick Start
 
-1. Add upstream credentials to `config.yaml`.
+1. Copy the example config and add your upstream credentials: `cp config.example.yaml config.yaml`. The example documents every supported field.
 2. Start the gateway:
 
 ```bash
@@ -43,7 +43,7 @@ curl http://127.0.0.1:8317/v1/chat/completions \
 
 ## Configuration
 
-The default config file is `config.yaml`. The gateway reads `.env` from the working directory when present.
+The default config file is `config.yaml`; see [`config.example.yaml`](config.example.yaml) for a fully documented template covering every supported section and field. The gateway reads `.env` from the working directory when present.
 
 Supported upstream sections include:
 

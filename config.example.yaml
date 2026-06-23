@@ -1,0 +1,149 @@
+# CLI Proxy API — example configuration.
+# Copy this file to config.yaml and fill in your own credentials.
+#   cp config.example.yaml config.yaml
+#
+# All api-key / secret-key fields below are placeholders. Replace them.
+# Lines starting with "#" are documentation; uncomment the blocks you need.
+
+# --- Server ---------------------------------------------------------------
+host: ""          # Bind address. Empty = all interfaces (IPv4 + IPv6). Use "127.0.0.1" for local-only.
+port: 8317        # Main API service port.
+auth-dir: "~/.cli-proxy-api"  # Directory for auth token files (used by OAuth/file-backed auth).
+
+# HTTPS (optional). Leave disabled for plain HTTP.
+# tls:
+#   enable: false
+#   cert: ""
+#   key: ""
+
+# --- Gateway access -------------------------------------------------------
+# Clients must send one of these keys as `Authorization: Bearer <key>`.
+api-keys:
+  - "sk-your-gateway-key"
+
+# Global outbound proxy (optional). Applied to all upstreams unless overridden per key.
+# proxy-url: "socks5://127.0.0.1:7890"
+
+# --- Runtime behavior -----------------------------------------------------
+debug: false
+request-log: true
+# disable-image-generation:
+#   false (default): image_generation enabled everywhere.
+#   true:             disabled everywhere (404 on /v1/images/*).
+#   "chat":           disabled on chat/responses endpoints, kept on /v1/images/*.
+disable-image-generation: false
+
+# Forward upstream response headers to downstream clients (default false).
+# passthrough-headers: false
+
+# Retries across credentials on failure. 0 = keep trying all (legacy).
+request-retry: 3
+# max-retry-credentials: 0       # Max credentials tried per failed request.
+# max-retry-interval: 0          # Max seconds to wait before retrying a cooled-down credential.
+
+# --- Quota failover -------------------------------------------------------
+quota-exceeded:
+  switch-project: true            # Switch to another project/credential on quota errors.
+  switch-preview-model: true      # Fall back to a preview model on quota errors.
+  # antigravity-credits: false    # Last-resort Google One AI credits fallback for Claude.
+
+# --- Routing --------------------------------------------------------------
+routing:
+  strategy: "round-robin"         # "round-robin" (default) or "fill-first".
+  # session-affinity: false       # Sticky routing per client session ID.
+  # session-affinity-ttl: "1h"    # How long session bindings are retained.
+
+# --- Management API / control panel ---------------------------------------
+# Served on port 8085. secret-key accepts plaintext or a bcrypt hash ($2a$/$2b$/$2y$).
+remote-management:
+  allow-remote: true              # Allow non-localhost access to management API.
+  secret-key: "$2a$10$REPLACE_WITH_BCRYPT_HASH_OF_YOUR_MANAGEMENT_SECRET"
+  disable-control-panel: false    # true = skip serving the bundled management UI.
+  # disable-auto-update-panel: false   # true = only download panel on first access if missing.
+  # panel-github-repository: "https://github.com/router-for-me/CLIProxyAPI"
+
+# --- Upstream providers ---------------------------------------------------
+# Each provider section is a list. Every config-backed provider supports both:
+#   * flat form:        top-level `api-key` (backward-compat, single key)
+#   * multi-key form:   `api-key-entries: [{ api-key, proxy-url, priority }]`
+# The two forms produce identical Auth IDs, so migrating flat -> entries is safe.
+
+# Anthropic (Claude-compatible /v1/messages).
+anthropic:
+  - base-url: "https://api.anthropic.com"
+    models:
+      - name: "claude-sonnet-4"
+        alias: "claude-sonnet-4"
+    # Flat single-key form:
+    api-key: "sk-ant-your-anthropic-key"
+    # Optional extra headers (e.g. to mimic a specific CLI fingerprint):
+    # headers:
+    #   User-Agent: "claude-cli/2.1.63 (external, cli)"
+    #   Anthropic-Beta: "claude-code-20250219"
+    # excluded-models:
+    #   - "claude-opus-*"
+    # priority: 0
+    # disable-cooling: false
+
+  # Multi-key form: share base-url/models/headers, fan out to many keys.
+  # - base-url: "https://your-relay.example.com"
+  #   models:
+  #     - name: "claude-sonnet-4"
+  #   api-key-entries:
+  #     - api-key: "sk-key-one"
+  #       proxy-url: "http://proxy-a:8080"
+  #       priority: 5
+  #     - api-key: "sk-key-two"
+  #       priority: 1
+
+# OpenAI Responses (Codex / /v1/responses). Also serves OpenAI-compatible chat when routed here.
+openai-responses:
+  - base-url: "https://api.openai.com/v1"
+    models:
+      - name: "gpt-5"
+        alias: "gpt-5"
+    api-key: "sk-your-openai-responses-key"
+    # proxy-url: "socks5://127.0.0.1:7890"
+    # headers:
+    #   User-Agent: "codex_cli_rs/0.118.0"
+    # websockets: false             # Enable Responses API websocket transport.
+
+# OpenAI-compatible providers (any third-party OpenAI-style endpoint).
+# Legacy yaml key `openai-compatibility` is still accepted and renamed in-memory.
+openai-compatible:
+  - name: "deepseek"
+    base-url: "https://api.deepseek.com/v1"
+    models:
+      - name: "deepseek-chat"
+        alias: "deepseek-chat"
+    api-key: "sk-your-deepseek-key"
+  # Multi-key variant:
+  # - name: "shared-relay"
+  #   base-url: "https://relay.example.com/v1"
+  #   models:
+  #     - name: "gpt-4o"
+  #   api-key-entries:
+  #     - api-key: "sk-relay-one"
+  #     - api-key: "sk-relay-two"
+  #       proxy-url: "http://proxy:8080"
+
+# Gemini API key providers (Google AI Studio style).
+# gemini-api-key:
+#   - base-url: "https://generativelanguage.googleapis.com"
+#     models:
+#       - name: "gemini-3-pro-preview"
+#         alias: "gemini-3-pro-preview"
+#     api-key: "AIzaYourGeminiKey"
+#     # api-key-entries:
+#     #   - api-key: "AIzaKeyOne"
+#     #   - api-key: "AIzaKeyTwo"
+
+# Vertex AI-compatible providers (Vertex-style paths with simple API keys,
+# e.g. zenmux.ai and similar). The executor appends
+# "/v1/publishers/google/models/{model}:action" to base-url.
+# vertex-api-key:
+#   - base-url: "https://your-vertex-compat-endpoint.example.com"
+#     models:
+#       - name: "gemini-2.5-pro"
+#         alias: "vertex-gemini-pro"
+#     api-key: "your-vertex-compat-key"
