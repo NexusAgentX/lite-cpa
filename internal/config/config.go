@@ -123,7 +123,7 @@ type Config struct {
 	ClaudeHeaderDefaults ClaudeHeaderDefaults `yaml:"claude-header-defaults" json:"claude-header-defaults"`
 
 	// OpenAICompatibility defines OpenAI API compatibility configurations for external providers.
-	OpenAICompatibility []OpenAICompatibility `yaml:"openai-compatibility" json:"openai-compatibility"`
+	OpenAICompatibility []OpenAICompatibility `yaml:"openai-compatible" json:"openai-compatible"`
 
 	// VertexCompatAPIKey defines Vertex AI-compatible API key configurations for third-party providers.
 	// Used for services that use Vertex AI-style paths but with simple API key authentication.
@@ -140,7 +140,7 @@ type Config struct {
 	// gemini-cli, vertex, aistudio, antigravity, claude, codex, kimi.
 	//
 	// NOTE: This does not apply to existing per-credential model alias features under:
-	// gemini-api-key, openai-responses, anthropic, openai-compatibility, vertex-api-key, and ampcode.
+	// gemini-api-key, openai-responses, anthropic, openai-compatible, vertex-api-key, and ampcode.
 	OAuthModelAlias map[string][]OAuthModelAlias `yaml:"oauth-model-alias,omitempty" json:"oauth-model-alias,omitempty"`
 
 	// Payload defines default and override rules for provider payload parameters.
@@ -375,6 +375,10 @@ type ClaudeKey struct {
 	// APIKey is the authentication key for accessing Claude API services.
 	APIKey string `yaml:"api-key" json:"api-key"`
 
+	// APIKeyEntries allows multiple keys to share this entry's config.
+	// Preferred over the flat APIKey/ProxyURL/Priority fields; when non-empty the synthesizer iterates these.
+	APIKeyEntries []APIKeyEntry `yaml:"api-key-entries,omitempty" json:"api-key-entries,omitempty"`
+
 	// Priority controls selection preference when multiple credentials match.
 	// Higher values are preferred; defaults to 0.
 	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
@@ -431,6 +435,10 @@ type CodexKey struct {
 	// APIKey is the authentication key for accessing Codex API services.
 	APIKey string `yaml:"api-key" json:"api-key"`
 
+	// APIKeyEntries allows multiple keys to share this entry's config.
+	// Preferred over the flat APIKey/ProxyURL/Priority fields; when non-empty the synthesizer iterates these.
+	APIKeyEntries []APIKeyEntry `yaml:"api-key-entries,omitempty" json:"api-key-entries,omitempty"`
+
 	// Priority controls selection preference when multiple credentials match.
 	// Higher values are preferred; defaults to 0.
 	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
@@ -481,6 +489,10 @@ func (m CodexModel) GetAlias() string { return m.Alias }
 type GeminiKey struct {
 	// APIKey is the authentication key for accessing Gemini API services.
 	APIKey string `yaml:"api-key" json:"api-key"`
+
+	// APIKeyEntries allows multiple keys to share this entry's config.
+	// Preferred over the flat APIKey/ProxyURL/Priority fields; when non-empty the synthesizer iterates these.
+	APIKeyEntries []APIKeyEntry `yaml:"api-key-entries,omitempty" json:"api-key-entries,omitempty"`
 
 	// Priority controls selection preference when multiple credentials match.
 	// Higher values are preferred; defaults to 0.
@@ -542,7 +554,18 @@ type OpenAICompatibility struct {
 	// BaseURL is the base URL for the external OpenAI-compatible API endpoint.
 	BaseURL string `yaml:"base-url" json:"base-url"`
 
+	// APIKey is the flat single-key form. When APIKeyEntries is empty and this
+	// field is non-empty, the synthesizer expands it into a single synthetic
+	// entry so single-key configs keep working without the entries wrapper.
+	// Prefer APIKeyEntries for multi-key providers.
+	APIKey string `yaml:"api-key,omitempty" json:"api-key,omitempty"`
+
+	// ProxyURL is the flat-form per-provider proxy. Used only when
+	// APIKeyEntries is empty; otherwise per-entry ProxyURL takes precedence.
+	ProxyURL string `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`
+
 	// APIKeyEntries defines API keys with optional per-key proxy configuration.
+	// When non-empty it takes precedence over the flat APIKey/ProxyURL fields.
 	APIKeyEntries []OpenAICompatibilityAPIKey `yaml:"api-key-entries,omitempty" json:"api-key-entries,omitempty"`
 
 	// Models defines the model configurations including aliases for routing.
@@ -562,6 +585,22 @@ type OpenAICompatibilityAPIKey struct {
 
 	// ProxyURL overrides the global proxy setting for this API key if provided.
 	ProxyURL string `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`
+}
+
+// APIKeyEntry represents a single API key with optional per-key proxy and priority.
+// Used by config-backed providers that support multi-key mode (Claude, Codex, Gemini, VertexCompat).
+// The flat APIKey/ProxyURL/Priority fields on the parent struct are kept as a backward-compat shim;
+// when APIKeyEntries is empty the synthesizer expands them into a single synthetic entry.
+type APIKeyEntry struct {
+	// APIKey is the authentication key sent upstream.
+	APIKey string `yaml:"api-key" json:"api-key"`
+
+	// ProxyURL overrides the global proxy for this specific key.
+	ProxyURL string `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`
+
+	// Priority controls selection preference when multiple credentials match.
+	// Higher values are preferred; defaults to 0 (inherits parent priority if unset).
+	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
 }
 
 // OpenAICompatibilityModel represents a model configuration for OpenAI compatibility,
@@ -616,7 +655,18 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 		return &Config{}, nil
 	}
 
-	// Unmarshal the YAML data into the Config struct.
+	// Parse YAML into a node tree first so we can apply backward-compat key
+	// renames (e.g. openai-compatibility -> openai-compatible) before decoding
+	// into the Config struct. This keeps legacy config.yaml files working.
+	var cfgNode yaml.Node
+	if err = yaml.Unmarshal(data, &cfgNode); err != nil {
+		if optional {
+			// In cloud deploy mode, if YAML parsing fails, return empty config instead of error.
+			return &Config{}, nil
+		}
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+	renameMapKeyInRoot(&cfgNode, "openai-compatibility", "openai-compatible")
 	var cfg Config
 	// Set defaults before unmarshal so that absent keys keep defaults.
 	cfg.Host = "" // Default empty: binds to all interfaces (IPv4 + IPv6)
@@ -631,7 +681,7 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	cfg.Pprof.Addr = DefaultPprofAddr
 	cfg.AmpCode.RestrictManagementToLocalhost = false // Default to false: API key auth is sufficient
 	cfg.RemoteManagement.PanelGitHubRepository = DefaultPanelGitHubRepository
-	if err = yaml.Unmarshal(data, &cfg); err != nil {
+	if err = cfgNode.Decode(&cfg); err != nil {
 		if optional {
 			// In cloud deploy mode, if YAML parsing fails, return empty config instead of error.
 			return &Config{}, nil
@@ -877,6 +927,8 @@ func (cfg *Config) SanitizeOpenAICompatibility() {
 		e.Name = strings.TrimSpace(e.Name)
 		e.Prefix = normalizeModelPrefix(e.Prefix)
 		e.BaseURL = strings.TrimSpace(e.BaseURL)
+		e.APIKey = strings.TrimSpace(e.APIKey)
+		e.ProxyURL = strings.TrimSpace(e.ProxyURL)
 		e.Headers = NormalizeHeaders(e.Headers)
 		if e.BaseURL == "" {
 			// Skip providers with no base-url; treated as removed
@@ -900,6 +952,7 @@ func (cfg *Config) SanitizeCodexKeys() {
 		e.BaseURL = strings.TrimSpace(e.BaseURL)
 		e.Headers = NormalizeHeaders(e.Headers)
 		e.ExcludedModels = NormalizeExcludedModels(e.ExcludedModels)
+		e.APIKeyEntries = sanitizeAPIKeyEntries(e.APIKeyEntries)
 		if e.BaseURL == "" {
 			continue
 		}
@@ -918,6 +971,7 @@ func (cfg *Config) SanitizeClaudeKeys() {
 		entry.Prefix = normalizeModelPrefix(entry.Prefix)
 		entry.Headers = NormalizeHeaders(entry.Headers)
 		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
+		entry.APIKeyEntries = sanitizeAPIKeyEntries(entry.APIKeyEntries)
 	}
 }
 
@@ -933,7 +987,8 @@ func (cfg *Config) SanitizeGeminiKeys() {
 	for i := range cfg.GeminiKey {
 		entry := cfg.GeminiKey[i]
 		entry.APIKey = strings.TrimSpace(entry.APIKey)
-		if entry.APIKey == "" {
+		entry.APIKeyEntries = sanitizeAPIKeyEntries(entry.APIKeyEntries)
+		if entry.APIKey == "" && len(entry.APIKeyEntries) == 0 {
 			continue
 		}
 		entry.Prefix = normalizeModelPrefix(entry.Prefix)
@@ -941,11 +996,15 @@ func (cfg *Config) SanitizeGeminiKeys() {
 		entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)
 		entry.Headers = NormalizeHeaders(entry.Headers)
 		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
-		uniqueKey := entry.APIKey + "|" + entry.BaseURL
-		if _, exists := seen[uniqueKey]; exists {
-			continue
+		// Dedupe by flat api-key + base-url. Items using api-key-entries are preserved
+		// as-is to honor their per-key configuration.
+		if entry.APIKey != "" {
+			uniqueKey := entry.APIKey + "|" + entry.BaseURL
+			if _, exists := seen[uniqueKey]; exists {
+				continue
+			}
+			seen[uniqueKey] = struct{}{}
 		}
-		seen[uniqueKey] = struct{}{}
 		out = append(out, entry)
 	}
 	cfg.GeminiKey = out
@@ -1087,6 +1146,8 @@ func SaveConfigPreserveComments(configFile string, cfg *Config) error {
 	// Remove deprecated sections before merging back the sanitized config.
 	removeLegacyAuthBlock(original.Content[0])
 	removeLegacyOpenAICompatAPIKeys(original.Content[0])
+	// Drop legacy openai-compatibility yaml key so it merges cleanly as openai-compatible.
+	removeMapKey(original.Content[0], "openai-compatibility")
 	removeLegacyAmpKeys(original.Content[0])
 	removeLegacyGenerativeLanguageKeys(original.Content[0])
 
@@ -1331,6 +1392,37 @@ func findMapKeyIndex(mapNode *yaml.Node, key string) int {
 		}
 	}
 	return -1
+}
+
+// renameMapKeyInRoot renames oldKey to newKey in the document root mapping of a
+// yaml.Node, preserving node position. If newKey already exists, oldKey is left
+// in place (the decoder will then ignore it as an unknown field). Used to shim
+// legacy yaml keys to their current names without mutating the user's file.
+func renameMapKeyInRoot(root *yaml.Node, oldKey, newKey string) {
+	if root == nil || oldKey == "" || newKey == "" || oldKey == newKey {
+		return
+	}
+	var mapNode *yaml.Node
+	switch root.Kind {
+	case yaml.DocumentNode:
+		if len(root.Content) == 0 || root.Content[0] == nil {
+			return
+		}
+		mapNode = root.Content[0]
+	default:
+		mapNode = root
+	}
+	if mapNode.Kind != yaml.MappingNode {
+		return
+	}
+	if findMapKeyIndex(mapNode, newKey) >= 0 {
+		return
+	}
+	oldIdx := findMapKeyIndex(mapNode, oldKey)
+	if oldIdx < 0 {
+		return
+	}
+	mapNode.Content[oldIdx].Value = newKey
 }
 
 // appendPath appends a key to the path, returning a new slice to avoid modifying the original.
@@ -1913,7 +2005,7 @@ func removeLegacyOpenAICompatAPIKeys(root *yaml.Node) {
 	if root == nil || root.Kind != yaml.MappingNode {
 		return
 	}
-	idx := findMapKeyIndex(root, "openai-compatibility")
+	idx := findMapKeyIndex(root, "openai-compatible")
 	if idx < 0 || idx+1 >= len(root.Content) {
 		return
 	}

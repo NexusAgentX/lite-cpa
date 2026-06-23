@@ -275,8 +275,8 @@ func openAICompatInfoFromAuth(a *coreauth.Auth) (providerKey string, compatName 
 			return strings.ToLower(providerKey), compatName, true
 		}
 	}
-	if strings.EqualFold(strings.TrimSpace(a.Provider), "openai-compatibility") {
-		return "openai-compatibility", strings.TrimSpace(a.Label), true
+	if strings.EqualFold(strings.TrimSpace(a.Provider), "openai-compatible") {
+		return "openai-compatible", strings.TrimSpace(a.Label), true
 	}
 	return "", "", false
 }
@@ -313,7 +313,7 @@ func (s *Service) ensureExecutorsForAuthWithMode(a *coreauth.Auth, forceReplace 
 			compatProviderKey = strings.ToLower(strings.TrimSpace(a.Provider))
 		}
 		if compatProviderKey == "" {
-			compatProviderKey = "openai-compatibility"
+			compatProviderKey = "openai-compatible"
 		}
 		s.coreManager.RegisterExecutor(executor.NewOpenAICompatExecutor(compatProviderKey, s.cfg))
 		return
@@ -328,7 +328,7 @@ func (s *Service) ensureExecutorsForAuthWithMode(a *coreauth.Auth, forceReplace 
 	default:
 		providerKey := strings.ToLower(strings.TrimSpace(a.Provider))
 		if providerKey == "" {
-			providerKey = "openai-compatibility"
+			providerKey = "openai-compatible"
 		}
 		s.coreManager.RegisterExecutor(executor.NewOpenAICompatExecutor(providerKey, s.cfg))
 	}
@@ -466,7 +466,7 @@ func (s *Service) registerHomeExecutors() {
 	s.coreManager.RegisterExecutor(executor.NewClaudeExecutor(s.cfg))
 	s.coreManager.RegisterExecutor(executor.NewGeminiExecutor(s.cfg))
 	s.coreManager.RegisterExecutor(executor.NewGeminiVertexExecutor(s.cfg))
-	s.coreManager.RegisterExecutor(executor.NewOpenAICompatExecutor("openai-compatibility", s.cfg))
+	s.coreManager.RegisterExecutor(executor.NewOpenAICompatExecutor("openai-compatible", s.cfg))
 }
 
 func (s *Service) applyHomeOverlay(remoteCfg *config.Config) {
@@ -864,7 +864,7 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 	provider := strings.ToLower(strings.TrimSpace(a.Provider))
 	compatProviderKey, compatDisplayName, compatDetected := openAICompatInfoFromAuth(a)
 	if compatDetected {
-		provider = "openai-compatibility"
+		provider = "openai-compatible"
 	}
 	excluded := s.oauthExcludedModels(provider, authKind)
 	// The synthesizer pre-merges per-account and global exclusions into the "excluded_models" attribute.
@@ -963,7 +963,7 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 				}
 				isCompatAuth = true
 			}
-			if strings.EqualFold(providerKey, "openai-compatibility") {
+			if strings.EqualFold(providerKey, "openai-compatible") {
 				isCompatAuth = true
 				if a.Attributes != nil {
 					if v := strings.TrimSpace(a.Attributes["compat_name"]); v != "" {
@@ -974,7 +974,7 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 						isCompatAuth = true
 					}
 				}
-				if providerKey == "openai-compatibility" && compatName != "" {
+				if providerKey == "openai-compatible" && compatName != "" {
 					providerKey = strings.ToLower(compatName)
 				}
 			} else if a.Attributes != nil {
@@ -987,12 +987,23 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 					isCompatAuth = true
 				}
 			}
+			authBaseURL := ""
+			if a.Attributes != nil {
+				authBaseURL = strings.TrimSpace(a.Attributes["base_url"])
+			}
 			for i := range s.cfg.OpenAICompatibility {
 				compat := &s.cfg.OpenAICompatibility[i]
 				if compat.Disabled {
 					continue
 				}
-				if strings.EqualFold(compat.Name, compatName) {
+				// Match by name; when the provider item is unnamed, fall back to
+				// base-URL so single-provider configs without an explicit name
+				// still route and register models.
+				matched := strings.EqualFold(compat.Name, compatName)
+				if !matched && compat.Name == "" && authBaseURL != "" {
+					matched = strings.EqualFold(strings.TrimSpace(compat.BaseURL), authBaseURL)
+				}
+				if matched {
 					isCompatAuth = true
 					// Convert compatibility models to registry models
 					ms := make([]*ModelInfo, 0, len(compat.Models))
@@ -1012,7 +1023,7 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 							Object:      "model",
 							Created:     time.Now().Unix(),
 							OwnedBy:     compat.Name,
-							Type:        "openai-compatibility",
+							Type:        "openai-compatible",
 							DisplayName: modelID,
 							UserDefined: false,
 							Thinking:    thinking,
@@ -1021,7 +1032,7 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 					// Register and return
 					if len(ms) > 0 {
 						if providerKey == "" {
-							providerKey = "openai-compatibility"
+							providerKey = "openai-compatible"
 						}
 						s.registerResolvedModelsForAuth(a, providerKey, applyModelPrefixes(ms, a.Prefix, s.cfg.ForceModelPrefix))
 					} else {

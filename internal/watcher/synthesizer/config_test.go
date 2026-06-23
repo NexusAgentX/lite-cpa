@@ -314,6 +314,106 @@ func TestConfigSynthesizer_CodexKeys_SkipsEmptyAndHeaders(t *testing.T) {
 	}
 }
 
+func TestConfigSynthesizer_ClaudeKeys_MultiKeyEntries(t *testing.T) {
+	synth := NewConfigSynthesizer()
+	ctx := &SynthesisContext{
+		Config: &config.Config{
+			ClaudeKey: []config.ClaudeKey{
+				{
+					BaseURL: "https://api.anthropic.com",
+					Prefix:  "teamA",
+					APIKeyEntries: []config.APIKeyEntry{
+						{APIKey: "sk-1", ProxyURL: "http://proxy-a:8080", Priority: 5},
+						{APIKey: "sk-2"}, // inherits parent fields; no priority override
+						{APIKey: ""},     // skipped
+					},
+					Headers: map[string]string{"X-Test": "v1"},
+				},
+			},
+		},
+		Now:         time.Now(),
+		IDGenerator: NewStableIDGenerator(),
+	}
+
+	auths, err := synth.Synthesize(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(auths) != 2 {
+		t.Fatalf("expected 2 auths (empty entry skipped), got %d", len(auths))
+	}
+	for i, a := range auths {
+		if a.Provider != "claude" {
+			t.Errorf("auth[%d].Provider = %s, want claude", i, a.Provider)
+		}
+		if a.Prefix != "teamA" {
+			t.Errorf("auth[%d].Prefix = %s, want teamA", i, a.Prefix)
+		}
+		if a.Attributes["base_url"] != "https://api.anthropic.com" {
+			t.Errorf("auth[%d].base_url = %s", i, a.Attributes["base_url"])
+		}
+		if a.Attributes["header:X-Test"] != "v1" {
+			t.Errorf("auth[%d].header:X-Test = %s", i, a.Attributes["header:X-Test"])
+		}
+	}
+	if auths[0].ProxyURL != "http://proxy-a:8080" {
+		t.Errorf("auth[0].ProxyURL = %s, want http://proxy-a:8080", auths[0].ProxyURL)
+	}
+	if auths[0].Attributes["priority"] != "5" {
+		t.Errorf("auth[0].priority = %s, want 5", auths[0].Attributes["priority"])
+	}
+	if auths[0].Attributes["api_key"] != "sk-1" {
+		t.Errorf("auth[0].api_key = %s, want sk-1", auths[0].Attributes["api_key"])
+	}
+	if auths[1].ProxyURL != "" {
+		t.Errorf("auth[1].ProxyURL = %s, want empty", auths[1].ProxyURL)
+	}
+	if _, ok := auths[1].Attributes["priority"]; ok {
+		t.Errorf("auth[1].priority should be absent, got %s", auths[1].Attributes["priority"])
+	}
+	// IDs must differ (different api-keys).
+	if auths[0].ID == auths[1].ID {
+		t.Errorf("expected distinct IDs, both = %s", auths[0].ID)
+	}
+}
+
+func TestConfigSynthesizer_GeminiKeys_LegacyFlatShimEquivalence(t *testing.T) {
+	// The flat api-key form and an equivalent single-entry api-key-entries form
+	// must produce the same Auth ID so existing state survives migration.
+	synth := NewConfigSynthesizer()
+	flat := &SynthesisContext{
+		Config: &config.Config{
+			GeminiKey: []config.GeminiKey{{APIKey: "sk-flat", BaseURL: "https://gemini.example.com"}},
+		},
+		Now:         time.Now(),
+		IDGenerator: NewStableIDGenerator(),
+	}
+	entries := &SynthesisContext{
+		Config: &config.Config{
+			GeminiKey: []config.GeminiKey{{
+				BaseURL:       "https://gemini.example.com",
+				APIKeyEntries: []config.APIKeyEntry{{APIKey: "sk-flat"}},
+			}},
+		},
+		Now:         time.Now(),
+		IDGenerator: NewStableIDGenerator(),
+	}
+	flatAuths, err := synth.Synthesize(flat)
+	if err != nil {
+		t.Fatalf("flat: unexpected error: %v", err)
+	}
+	entryAuths, err := synth.Synthesize(entries)
+	if err != nil {
+		t.Fatalf("entries: unexpected error: %v", err)
+	}
+	if len(flatAuths) != 1 || len(entryAuths) != 1 {
+		t.Fatalf("expected 1 auth each, got flat=%d entries=%d", len(flatAuths), len(entryAuths))
+	}
+	if flatAuths[0].ID != entryAuths[0].ID {
+		t.Errorf("ID mismatch between flat and entries form: %s != %s", flatAuths[0].ID, entryAuths[0].ID)
+	}
+}
+
 func TestConfigSynthesizer_OpenAICompat(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -360,6 +460,44 @@ func TestConfigSynthesizer_OpenAICompat(t *testing.T) {
 			wantLen: 1,
 		},
 		{
+			name: "flat api-key expands to single entry",
+			compat: []config.OpenAICompatibility{
+				{
+					Name:    "FlatKey",
+					BaseURL: "https://flat.api.com",
+					APIKey:  "flat-key-1",
+				},
+			},
+			wantLen: 1,
+		},
+		{
+			name: "flat api-key with proxy-url",
+			compat: []config.OpenAICompatibility{
+				{
+					Name:     "FlatProxy",
+					BaseURL:  "https://flat-proxy.api.com",
+					APIKey:   "flat-key-2",
+					ProxyURL: "http://proxy:8080",
+				},
+			},
+			wantLen: 1,
+		},
+		{
+			name: "api-key-entries wins over flat api-key",
+			compat: []config.OpenAICompatibility{
+				{
+					Name:    "Mixed",
+					BaseURL: "https://mixed.api.com",
+					APIKey:  "ignored-flat",
+					APIKeyEntries: []config.OpenAICompatibilityAPIKey{
+						{APIKey: "entry-1"},
+						{APIKey: "entry-2"},
+					},
+				},
+			},
+			wantLen: 2,
+		},
+		{
 			name: "empty name defaults",
 			compat: []config.OpenAICompatibility{
 				{
@@ -393,6 +531,28 @@ func TestConfigSynthesizer_OpenAICompat(t *testing.T) {
 				for i := range auths {
 					if v, ok := auths[i].Metadata["disable_cooling"].(bool); !ok || !v {
 						t.Fatalf("expected auth[%d].disable_cooling=true, got %v", i, auths[i].Metadata["disable_cooling"])
+					}
+				}
+			}
+			// Flat api-key must populate the api_key attribute so the proxy
+			// forwards credentials upstream (regression guard).
+			if tt.name == "flat api-key expands to single entry" || tt.name == "flat api-key with proxy-url" {
+				if got := auths[0].Attributes["api_key"]; got == "" {
+					t.Fatalf("expected api_key attribute populated for %q, got empty", tt.name)
+				}
+				if tt.name == "flat api-key with proxy-url" && auths[0].ProxyURL != "http://proxy:8080" {
+					t.Fatalf("expected ProxyURL http://proxy:8080, got %q", auths[0].ProxyURL)
+				}
+			}
+			// Entries form must win over the flat api-key when both are set.
+			if tt.name == "api-key-entries wins over flat api-key" {
+				got := make(map[string]struct{}, len(auths))
+				for i := range auths {
+					got[auths[i].Attributes["api_key"]] = struct{}{}
+				}
+				for _, want := range []string{"entry-1", "entry-2"} {
+					if _, ok := got[want]; !ok {
+						t.Fatalf("expected api_key %q in synthesized auths, got %v", want, got)
 					}
 				}
 			}

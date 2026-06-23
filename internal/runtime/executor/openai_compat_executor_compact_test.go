@@ -27,7 +27,7 @@ func TestOpenAICompatExecutorCompactPassthrough(t *testing.T) {
 	}))
 	defer server.Close()
 
-	executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{})
+	executor := NewOpenAICompatExecutor("openai-compatible", &config.Config{})
 	auth := &cliproxyauth.Auth{Attributes: map[string]string{
 		"base_url": server.URL + "/v1",
 		"api_key":  "test",
@@ -68,7 +68,7 @@ func TestOpenAICompatExecutorPayloadOverrideWinsOverThinkingSuffix(t *testing.T)
 	}))
 	defer server.Close()
 
-	executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{
+	executor := NewOpenAICompatExecutor("openai-compatible", &config.Config{
 		Payload: config.PayloadConfig{
 			Override: []config.PayloadRule{
 				{
@@ -110,7 +110,7 @@ func TestOpenAICompatExecutorStreamRejectsPlainJSONAfterBlankLines(t *testing.T)
 	}))
 	defer server.Close()
 
-	executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{})
+	executor := NewOpenAICompatExecutor("openai-compatible", &config.Config{})
 	auth := &cliproxyauth.Auth{Attributes: map[string]string{
 		"base_url": server.URL + "/v1",
 		"api_key":  "test",
@@ -152,7 +152,7 @@ func TestOpenAICompatExecutorStreamSkipsKeepAliveUntilDataLine(t *testing.T) {
 	}))
 	defer server.Close()
 
-	executor := NewOpenAICompatExecutor("openai-compatibility", &config.Config{})
+	executor := NewOpenAICompatExecutor("openai-compatible", &config.Config{})
 	auth := &cliproxyauth.Auth{Attributes: map[string]string{
 		"base_url": server.URL + "/v1",
 		"api_key":  "test",

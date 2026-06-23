@@ -21,7 +21,7 @@ import (
 //   - "gemini" for Google's Gemini family
 //   - "codex" for OpenAI GPT-compatible providers
 //   - "claude" for Anthropic models
-//   - "openai-compatibility" for external OpenAI-compatible providers
+//   - "openai-compatible" for external OpenAI-compatible providers
 //
 // Parameters:
 //   - modelName: The name of the model to identify providers for.

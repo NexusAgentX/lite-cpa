@@ -51,9 +51,32 @@ Supported upstream sections include:
 - `vertex-api-key`
 - `anthropic`
 - `openai-responses`
-- `openai-compatibility`
+- `openai-compatible`
 
 Each upstream entry can define its API key, base URL, models, aliases, prefixes, priority, and excluded models where supported by that provider type.
+
+### Multi-key entries
+
+All config-backed providers (`gemini-api-key`, `anthropic`, `openai-responses`, `vertex-api-key`, `openai-compatible`) support an `api-key-entries` list that lets one provider entry fan out to many keys sharing the same base URL, models, headers, and other top-level fields. Each entry can override `proxy-url` and `priority`:
+
+```yaml
+anthropic:
+  - base-url: "https://api.anthropic.com"
+    models:
+      - name: "claude-sonnet-4"
+        alias: "claude-sonnet-4"
+    api-key-entries:
+      - api-key: "sk-aaa"
+        proxy-url: "http://proxy-a:8080"
+        priority: 5
+      - api-key: "sk-bbb"
+```
+
+The legacy flat `api-key` field is kept as a backward-compat shim: when `api-key-entries` is empty, it is expanded into a single synthetic entry. The flat form and the equivalent single-entry form produce identical Auth IDs, so existing auth state survives migration.
+
+### Legacy `openai-compatibility` key
+
+`openai-compatible` was previously spelled `openai-compatibility`. The old yaml key still works (renamed in-memory at load time) so existing configs keep parsing; the management API, TUI, and provider identifiers all use `openai-compatible`.
 
 ## Docker Deployment
 

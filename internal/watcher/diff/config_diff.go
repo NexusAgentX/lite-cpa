@@ -118,6 +118,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
 				changes = append(changes, fmt.Sprintf("gemini[%d].api-key: updated", i))
 			}
+			if oldE, newE := SummarizeAPIKeyEntries(o.APIKeyEntries), SummarizeAPIKeyEntries(n.APIKeyEntries); oldE.hash != newE.hash {
+				changes = append(changes, fmt.Sprintf("gemini[%d].api-key-entries: updated (%d -> %d entries)", i, oldE.count, newE.count))
+			}
 			if !equalStringMap(o.Headers, n.Headers) {
 				changes = append(changes, fmt.Sprintf("gemini[%d].headers: updated", i))
 			}
@@ -152,6 +155,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			}
 			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
 				changes = append(changes, fmt.Sprintf("claude[%d].api-key: updated", i))
+			}
+			if oldE, newE := SummarizeAPIKeyEntries(o.APIKeyEntries), SummarizeAPIKeyEntries(n.APIKeyEntries); oldE.hash != newE.hash {
+				changes = append(changes, fmt.Sprintf("claude[%d].api-key-entries: updated (%d -> %d entries)", i, oldE.count, newE.count))
 			}
 			if !equalStringMap(o.Headers, n.Headers) {
 				changes = append(changes, fmt.Sprintf("claude[%d].headers: updated", i))
@@ -201,6 +207,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			}
 			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
 				changes = append(changes, fmt.Sprintf("codex[%d].api-key: updated", i))
+			}
+			if oldE, newE := SummarizeAPIKeyEntries(o.APIKeyEntries), SummarizeAPIKeyEntries(n.APIKeyEntries); oldE.hash != newE.hash {
+				changes = append(changes, fmt.Sprintf("codex[%d].api-key-entries: updated (%d -> %d entries)", i, oldE.count, newE.count))
 			}
 			if !equalStringMap(o.Headers, n.Headers) {
 				changes = append(changes, fmt.Sprintf("codex[%d].headers: updated", i))
@@ -286,7 +295,7 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 
 	// OpenAI compatibility providers (summarized)
 	if compat := DiffOpenAICompatibility(oldCfg.OpenAICompatibility, newCfg.OpenAICompatibility); len(compat) > 0 {
-		changes = append(changes, "openai-compatibility:")
+		changes = append(changes, "openai-compatible:")
 		for _, c := range compat {
 			changes = append(changes, "  "+c)
 		}
@@ -310,6 +319,9 @@ func BuildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 			}
 			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
 				changes = append(changes, fmt.Sprintf("vertex[%d].api-key: updated", i))
+			}
+			if oldE, newE := SummarizeAPIKeyEntries(o.APIKeyEntries), SummarizeAPIKeyEntries(n.APIKeyEntries); oldE.hash != newE.hash {
+				changes = append(changes, fmt.Sprintf("vertex[%d].api-key-entries: updated (%d -> %d entries)", i, oldE.count, newE.count))
 			}
 			oldModels := SummarizeVertexModels(o.Models)
 			newModels := SummarizeVertexModels(n.Models)

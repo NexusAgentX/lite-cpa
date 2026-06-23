@@ -438,7 +438,7 @@ func isOpenAICompatAPIKeyAuth(auth *Auth) bool {
 	if !isAPIKeyAuth(auth) {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(auth.Provider), "openai-compatibility") {
+	if strings.EqualFold(strings.TrimSpace(auth.Provider), "openai-compatible") {
 		return true
 	}
 	if auth.Attributes == nil {
@@ -524,11 +524,13 @@ func (m *Manager) resolveOpenAICompatUpstreamModelPool(auth *Auth, requestedMode
 	}
 	providerKey := ""
 	compatName := ""
+	baseURL := ""
 	if auth.Attributes != nil {
 		providerKey = strings.TrimSpace(auth.Attributes["provider_key"])
 		compatName = strings.TrimSpace(auth.Attributes["compat_name"])
+		baseURL = strings.TrimSpace(auth.Attributes["base_url"])
 	}
-	entry := resolveOpenAICompatConfig(cfg, providerKey, compatName, auth.Provider)
+	entry := resolveOpenAICompatConfig(cfg, providerKey, compatName, auth.Provider, baseURL)
 	if entry == nil {
 		return nil
 	}
@@ -1004,14 +1006,16 @@ func (m *Manager) rebuildAPIKeyModelAliasLocked(cfg *internalconfig.Config) {
 			}
 		default:
 			// OpenAI-compat uses config selection from auth.Attributes.
-			providerKey := ""
-			compatName := ""
-			if auth.Attributes != nil {
-				providerKey = strings.TrimSpace(auth.Attributes["provider_key"])
-				compatName = strings.TrimSpace(auth.Attributes["compat_name"])
-			}
-			if compatName != "" || strings.EqualFold(strings.TrimSpace(auth.Provider), "openai-compatibility") {
-				if entry := resolveOpenAICompatConfig(cfg, providerKey, compatName, auth.Provider); entry != nil {
+		providerKey := ""
+		compatName := ""
+		baseURL := ""
+		if auth.Attributes != nil {
+			providerKey = strings.TrimSpace(auth.Attributes["provider_key"])
+			compatName = strings.TrimSpace(auth.Attributes["compat_name"])
+			baseURL = strings.TrimSpace(auth.Attributes["base_url"])
+		}
+		if compatName != "" || strings.EqualFold(strings.TrimSpace(auth.Provider), "openai-compatible") {
+			if entry := resolveOpenAICompatConfig(cfg, providerKey, compatName, auth.Provider, baseURL); entry != nil {
 					compileAPIKeyModelAliasForModels(byAlias, entry.Models)
 				}
 			}
@@ -1896,14 +1900,16 @@ func resolveUpstreamModelForVertexAPIKey(cfg *internalconfig.Config, auth *Auth,
 func resolveUpstreamModelForOpenAICompatAPIKey(cfg *internalconfig.Config, auth *Auth, requestedModel string) string {
 	providerKey := ""
 	compatName := ""
+	baseURL := ""
 	if auth != nil && len(auth.Attributes) > 0 {
 		providerKey = strings.TrimSpace(auth.Attributes["provider_key"])
 		compatName = strings.TrimSpace(auth.Attributes["compat_name"])
+		baseURL = strings.TrimSpace(auth.Attributes["base_url"])
 	}
-	if compatName == "" && !strings.EqualFold(strings.TrimSpace(auth.Provider), "openai-compatibility") {
+	if compatName == "" && !strings.EqualFold(strings.TrimSpace(auth.Provider), "openai-compatible") {
 		return ""
 	}
-	entry := resolveOpenAICompatConfig(cfg, providerKey, compatName, auth.Provider)
+	entry := resolveOpenAICompatConfig(cfg, providerKey, compatName, auth.Provider, baseURL)
 	if entry == nil {
 		return ""
 	}
@@ -1912,7 +1918,7 @@ func resolveUpstreamModelForOpenAICompatAPIKey(cfg *internalconfig.Config, auth 
 
 type apiKeyModelAliasTable map[string]map[string]string
 
-func resolveOpenAICompatConfig(cfg *internalconfig.Config, providerKey, compatName, authProvider string) *internalconfig.OpenAICompatibility {
+func resolveOpenAICompatConfig(cfg *internalconfig.Config, providerKey, compatName, authProvider, baseURL string) *internalconfig.OpenAICompatibility {
 	if cfg == nil {
 		return nil
 	}
@@ -1933,6 +1939,20 @@ func resolveOpenAICompatConfig(cfg *internalconfig.Config, providerKey, compatNa
 		}
 		for _, candidate := range candidates {
 			if candidate != "" && strings.EqualFold(strings.TrimSpace(candidate), compat.Name) {
+				return compat
+			}
+		}
+	}
+	// Fallback: identify the entry by base URL so configs that omit an explicit
+	// name still resolve their model aliases.
+	base := strings.TrimSpace(baseURL)
+	if base != "" {
+		for i := range cfg.OpenAICompatibility {
+			compat := &cfg.OpenAICompatibility[i]
+			if compat.Disabled {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(compat.BaseURL), base) {
 				return compat
 			}
 		}
@@ -3314,9 +3334,9 @@ func (m *Manager) homeRuntimeAuthByID(sessionID string, authID string) (*Auth, P
 	}
 	executor, ok := m.Executor(providerKey)
 	if !ok && auth.Attributes != nil && strings.TrimSpace(auth.Attributes["base_url"]) != "" {
-		executor, ok = m.Executor("openai-compatibility")
+		executor, ok = m.Executor("openai-compatible")
 		if ok {
-			providerKey = "openai-compatibility"
+			providerKey = "openai-compatible"
 		}
 	}
 	if !ok {
@@ -3414,9 +3434,9 @@ func (m *Manager) pickNextViaHome(ctx context.Context, model string, opts clipro
 
 	executor, ok := m.Executor(providerKey)
 	if !ok && auth.Attributes != nil && strings.TrimSpace(auth.Attributes["base_url"]) != "" {
-		executor, ok = m.Executor("openai-compatibility")
+		executor, ok = m.Executor("openai-compatible")
 		if ok {
-			providerKey = "openai-compatibility"
+			providerKey = "openai-compatible"
 		}
 	}
 	if !ok {

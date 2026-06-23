@@ -91,6 +91,11 @@ func countAPIKeys(entry config.OpenAICompatibility) int {
 			count++
 		}
 	}
+	// Honor the flat single-key form: when no entries are configured it
+	// represents the provider's single credential.
+	if count == 0 && strings.TrimSpace(entry.APIKey) != "" {
+		count = 1
+	}
 	return count
 }
 

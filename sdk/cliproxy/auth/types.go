@@ -304,8 +304,8 @@ func (a *Auth) indexSeed() string {
 	apiPrefix := ""
 	if apiKey != "" {
 		switch {
-		case compatName != "" || strings.EqualFold(provider, "openai-compatibility"):
-			apiPrefix = "openai-compatibility"
+		case compatName != "" || strings.EqualFold(provider, "openai-compatible"):
+			apiPrefix = "openai-compatible"
 		case strings.EqualFold(provider, "gemini"):
 			apiPrefix = "gemini-api-key"
 		case strings.EqualFold(provider, "codex"):

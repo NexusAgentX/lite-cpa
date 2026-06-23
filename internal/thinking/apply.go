@@ -35,7 +35,7 @@ func RegisterProvider(name string, applier ProviderApplier) {
 // have thinking configuration passed through without validation.
 //
 // User-defined models are configured via config file's models[] array
-// (e.g., openai-compatibility.*.models[], *-api-key.models[]). These models
+// (e.g., openai-compatible.*.models[], *-api-key.models[]). These models
 // are marked with UserDefined=true at registration time.
 //
 // User-defined models should have their thinking configuration applied directly,

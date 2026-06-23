@@ -731,7 +731,7 @@ func proxyURLFromAPIKeyConfig(cfg *config.Config, auth *coreauth.Auth) string {
 		compatName = strings.TrimSpace(attrs["compat_name"])
 		providerKey = strings.TrimSpace(attrs["provider_key"])
 	}
-	if compatName != "" || strings.EqualFold(strings.TrimSpace(auth.Provider), "openai-compatibility") {
+	if compatName != "" || strings.EqualFold(strings.TrimSpace(auth.Provider), "openai-compatible") {
 		return resolveOpenAICompatAPIKeyProxyURL(cfg, auth, strings.TrimSpace(authAccount), providerKey, compatName)
 	}
 
@@ -777,15 +777,19 @@ func resolveOpenAICompatAPIKeyProxyURL(cfg *config.Config, auth *coreauth.Auth, 
 			continue
 		}
 		for _, candidate := range candidates {
-			if candidate != "" && strings.EqualFold(strings.TrimSpace(candidate), compat.Name) {
-				for j := range compat.APIKeyEntries {
-					entry := &compat.APIKeyEntries[j]
-					if strings.EqualFold(strings.TrimSpace(entry.APIKey), apiKey) {
-						return strings.TrimSpace(entry.ProxyURL)
-					}
-				}
-				return ""
+			if candidate == "" || !strings.EqualFold(strings.TrimSpace(candidate), compat.Name) {
+				continue
 			}
+			// Match per-entry keys first; fall back to the flat api-key shim.
+			for j := range compat.APIKeyEntries {
+				if strings.EqualFold(strings.TrimSpace(compat.APIKeyEntries[j].APIKey), apiKey) {
+					return strings.TrimSpace(compat.APIKeyEntries[j].ProxyURL)
+				}
+			}
+			if strings.EqualFold(strings.TrimSpace(compat.APIKey), apiKey) {
+				return strings.TrimSpace(compat.ProxyURL)
+			}
+			return ""
 		}
 	}
 	return ""

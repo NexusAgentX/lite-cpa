@@ -94,7 +94,7 @@ func TestBuildConfigChangeDetails(t *testing.T) {
 	expectContains(t, details, "remote-management.secret-key: updated")
 	expectContains(t, details, "oauth-excluded-models[providera]: updated (1 -> 2 entries)")
 	expectContains(t, details, "oauth-excluded-models[providerb]: added (1 entries)")
-	expectContains(t, details, "openai-compatibility:")
+	expectContains(t, details, "openai-compatible:")
 	expectContains(t, details, "  provider added: compat-b (api-keys=1, models=0)")
 	expectContains(t, details, "  provider updated: compat-a (models 1 -> 2)")
 }
@@ -476,7 +476,7 @@ func TestBuildConfigChangeDetails_AllBranches(t *testing.T) {
 	expectContains(t, changes, "remote-management.disable-auto-update-panel: false -> true")
 	expectContains(t, changes, "remote-management.panel-github-repository: old/repo -> new/repo")
 	expectContains(t, changes, "remote-management.secret-key: deleted")
-	expectContains(t, changes, "openai-compatibility:")
+	expectContains(t, changes, "openai-compatible:")
 }
 
 func TestFormatProxyURL(t *testing.T) {

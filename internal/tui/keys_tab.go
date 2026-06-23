@@ -380,21 +380,63 @@ func renderProviderKeys(sb *strings.Builder, title string, keys []map[string]any
 	if len(keys) == 0 {
 		return
 	}
-	renderSection(sb, title, len(keys))
-	for i, key := range keys {
-		apiKey := getString(key, "api-key")
+	// Flatten multi-key items: an item with api-key-entries contributes one row per entry;
+	// a flat item (legacy single-key form) contributes one row using its top-level fields.
+	type row struct {
+		apiKey   string
+		prefix   string
+		baseURL  string
+		priority string
+	}
+	rows := make([]row, 0, len(keys))
+	for _, key := range keys {
 		prefix := getString(key, "prefix")
 		baseURL := getString(key, "base-url")
-		info := maskKey(apiKey)
-		if prefix != "" {
-			info += " (prefix: " + prefix + ")"
+		if entries, ok := key["api-key-entries"].([]any); ok && len(entries) > 0 {
+			for _, raw := range entries {
+				entry, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				rows = append(rows, row{
+					apiKey:   getString(entry, "api-key"),
+					prefix:   prefix,
+					baseURL:  baseURL,
+					priority: priorityLabel(getInt(entry, "priority")),
+				})
+			}
+			continue
 		}
-		if baseURL != "" {
-			info += " → " + baseURL
+		rows = append(rows, row{
+			apiKey:   getString(key, "api-key"),
+			prefix:   prefix,
+			baseURL:  baseURL,
+			priority: priorityLabel(getInt(key, "priority")),
+		})
+	}
+	renderSection(sb, title, len(rows))
+	for i, r := range rows {
+		info := maskKey(r.apiKey)
+		if r.prefix != "" {
+			info += " (prefix: " + r.prefix + ")"
+		}
+		if r.priority != "" {
+			info += " [" + r.priority + "]"
+		}
+		if r.baseURL != "" {
+			info += " → " + r.baseURL
 		}
 		sb.WriteString(fmt.Sprintf("  %d. %s\n", i+1, info))
 	}
 	sb.WriteString("\n")
+}
+
+// priorityLabel renders a priority value for display; empty when zero.
+func priorityLabel(p int) string {
+	if p == 0 {
+		return ""
+	}
+	return fmt.Sprintf("priority %d", p)
 }
 
 func maskKey(key string) string {

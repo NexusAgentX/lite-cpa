@@ -270,7 +270,10 @@ func BuildAPIKeyClients(cfg *config.Config) (int, int, int, int, int) {
 			if compatConfig.Disabled {
 				continue
 			}
-			openAICompatCount += len(compatConfig.APIKeyEntries)
+			// Honor the flat single-key form; synthesizer.ExpandOpenAICompatAPIKeyEntries
+			// performs the same expansion when wiring up Auth entries.
+			entries := synthesizer.ExpandOpenAICompatAPIKeyEntries(compatConfig.APIKeyEntries, compatConfig.APIKey, compatConfig.ProxyURL)
+			openAICompatCount += len(entries)
 		}
 	}
 	return geminiAPIKeyCount, vertexCompatAPIKeyCount, claudeAPIKeyCount, codexAPIKeyCount, openAICompatCount

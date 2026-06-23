@@ -13,6 +13,10 @@ type VertexCompatKey struct {
 	// Maps to the x-goog-api-key header.
 	APIKey string `yaml:"api-key" json:"api-key"`
 
+	// APIKeyEntries allows multiple keys to share this entry's config.
+	// Preferred over the flat APIKey/ProxyURL/Priority fields; when non-empty the synthesizer iterates these.
+	APIKeyEntries []APIKeyEntry `yaml:"api-key-entries,omitempty" json:"api-key-entries,omitempty"`
+
 	// Priority controls selection preference when multiple credentials match.
 	// Higher values are preferred; defaults to 0.
 	Priority int `yaml:"priority,omitempty" json:"priority,omitempty"`
@@ -55,6 +59,33 @@ type VertexCompatModel struct {
 func (m VertexCompatModel) GetName() string  { return m.Name }
 func (m VertexCompatModel) GetAlias() string { return m.Alias }
 
+// sanitizeAPIKeyEntries trims, drops empty, and dedupes api-key-entries by api-key.
+// Returns nil when the result is empty so omitempty yaml/json tags kick in.
+func sanitizeAPIKeyEntries(entries []APIKeyEntry) []APIKeyEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(entries))
+	out := entries[:0]
+	for i := range entries {
+		e := entries[i]
+		e.APIKey = strings.TrimSpace(e.APIKey)
+		if e.APIKey == "" {
+			continue
+		}
+		e.ProxyURL = strings.TrimSpace(e.ProxyURL)
+		if _, exists := seen[e.APIKey]; exists {
+			continue
+		}
+		seen[e.APIKey] = struct{}{}
+		out = append(out, e)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // SanitizeVertexCompatKeys deduplicates and normalizes Vertex-compatible API key credentials.
 func (cfg *Config) SanitizeVertexCompatKeys() {
 	if cfg == nil {
@@ -66,7 +97,9 @@ func (cfg *Config) SanitizeVertexCompatKeys() {
 	for i := range cfg.VertexCompatAPIKey {
 		entry := cfg.VertexCompatAPIKey[i]
 		entry.APIKey = strings.TrimSpace(entry.APIKey)
-		if entry.APIKey == "" {
+		entry.APIKeyEntries = sanitizeAPIKeyEntries(entry.APIKeyEntries)
+		// Drop only when both legacy flat key and entries are empty.
+		if entry.APIKey == "" && len(entry.APIKeyEntries) == 0 {
 			continue
 		}
 		entry.Prefix = normalizeModelPrefix(entry.Prefix)
@@ -86,12 +119,15 @@ func (cfg *Config) SanitizeVertexCompatKeys() {
 		}
 		entry.Models = sanitizedModels
 
-		// Use API key + base URL as uniqueness key
-		uniqueKey := entry.APIKey + "|" + entry.BaseURL
-		if _, exists := seen[uniqueKey]; exists {
-			continue
+		// Dedupe by flat api-key + base-url. Items using api-key-entries are preserved
+		// as-is to honor their per-key configuration.
+		if entry.APIKey != "" {
+			uniqueKey := entry.APIKey + "|" + entry.BaseURL
+			if _, exists := seen[uniqueKey]; exists {
+				continue
+			}
+			seen[uniqueKey] = struct{}{}
 		}
-		seen[uniqueKey] = struct{}{}
 		out = append(out, entry)
 	}
 	cfg.VertexCompatAPIKey = out

@@ -76,14 +76,23 @@ func TestAPICallTransportAPIKeyAuthFallsBackToConfigProxyURL(t *testing.T) {
 				APIKey:   "codex-key",
 				ProxyURL: "http://codex-proxy.example.com:8080",
 			}},
-			OpenAICompatibility: []config.OpenAICompatibility{{
-				Name:    "bohe",
-				BaseURL: "https://bohe.example.com",
-				APIKeyEntries: []config.OpenAICompatibilityAPIKey{{
-					APIKey:   "compat-key",
-					ProxyURL: "http://compat-proxy.example.com:8080",
-				}},
-			}},
+			OpenAICompatibility: []config.OpenAICompatibility{
+				{
+					Name:    "bohe",
+					BaseURL: "https://bohe.example.com",
+					APIKeyEntries: []config.OpenAICompatibilityAPIKey{{
+						APIKey:   "compat-key",
+						ProxyURL: "http://compat-proxy.example.com:8080",
+					}},
+				},
+				{
+					// Flat single-key form with its own proxy-url.
+					Name:     "flat-provider",
+					BaseURL:  "https://flat.example.com",
+					APIKey:   "flat-key",
+					ProxyURL: "http://flat-proxy.example.com:8080",
+				},
+			},
 		},
 	}
 
@@ -117,7 +126,7 @@ func TestAPICallTransportAPIKeyAuthFallsBackToConfigProxyURL(t *testing.T) {
 			wantProxy: "http://codex-proxy.example.com:8080",
 		},
 		{
-			name: "openai-compatibility",
+			name: "openai-compatible",
 			auth: &coreauth.Auth{
 				Provider: "bohe",
 				Attributes: map[string]string{
@@ -127,6 +136,18 @@ func TestAPICallTransportAPIKeyAuthFallsBackToConfigProxyURL(t *testing.T) {
 				},
 			},
 			wantProxy: "http://compat-proxy.example.com:8080",
+		},
+		{
+			name: "openai-compatible flat api-key",
+			auth: &coreauth.Auth{
+				Provider: "flat-provider",
+				Attributes: map[string]string{
+					"api_key":      "flat-key",
+					"compat_name":  "flat-provider",
+					"provider_key": "flat-provider",
+				},
+			},
+			wantProxy: "http://flat-proxy.example.com:8080",
 		},
 	}
 
@@ -169,7 +190,7 @@ func TestAuthByIndexDistinguishesSharedAPIKeysAcrossProviders(t *testing.T) {
 		},
 	}
 	compatAuth := &coreauth.Auth{
-		ID:       "openai-compatibility:bohe:456",
+		ID:       "openai-compatible:bohe:456",
 		Provider: "bohe",
 		Label:    "bohe",
 		Attributes: map[string]string{

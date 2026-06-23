@@ -511,10 +511,10 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PATCH("/openai-responses", s.mgmt.PatchCodexKey)
 		mgmt.DELETE("/openai-responses", s.mgmt.DeleteCodexKey)
 
-		mgmt.GET("/openai-compatibility", s.mgmt.GetOpenAICompat)
-		mgmt.PUT("/openai-compatibility", s.mgmt.PutOpenAICompat)
-		mgmt.PATCH("/openai-compatibility", s.mgmt.PatchOpenAICompat)
-		mgmt.DELETE("/openai-compatibility", s.mgmt.DeleteOpenAICompat)
+		mgmt.GET("/openai-compatible", s.mgmt.GetOpenAICompat)
+		mgmt.PUT("/openai-compatible", s.mgmt.PutOpenAICompat)
+		mgmt.PATCH("/openai-compatible", s.mgmt.PatchOpenAICompat)
+		mgmt.DELETE("/openai-compatible", s.mgmt.DeleteOpenAICompat)
 
 		mgmt.GET("/vertex-api-key", s.mgmt.GetVertexCompatKeys)
 		mgmt.PUT("/vertex-api-key", s.mgmt.PutVertexCompatKeys)

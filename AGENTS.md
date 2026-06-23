@@ -64,7 +64,8 @@ Common flags: `--config <path>`, `--tui`, `--standalone`, `--local-model`, `--ve
 
 - Default config: `config.yaml`.
 - `.env` is auto-loaded from the working directory.
-- Supported config-backed upstreams: `gemini-api-key`, `vertex-api-key`, `anthropic`, `openai-responses`, and `openai-compatibility`.
+- Supported config-backed upstreams: `gemini-api-key`, `vertex-api-key`, `anthropic`, `openai-responses`, and `openai-compatible` (legacy alias `openai-compatibility`).
+- All config-backed upstreams support an `api-key-entries: [{api-key, proxy-url, priority}]` list for multi-key mode. The flat `api-key` field is kept as a backward-compat shim that expands to a single entry; both forms produce identical Auth IDs.
 - Storage backends remain available for config/state persistence when enabled with `PGSTORE_*`, `GITSTORE_*`, or `OBJECTSTORE_*`.
 
 ## Architecture

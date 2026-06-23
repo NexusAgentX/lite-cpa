@@ -426,9 +426,9 @@ func (h *Handler) DeleteClaudeKey(c *gin.Context) {
 	c.JSON(400, gin.H{"error": "missing api-key or index"})
 }
 
-// openai-compatibility: []OpenAICompatibility
+// openai-compatible: []OpenAICompatibility
 func (h *Handler) GetOpenAICompat(c *gin.Context) {
-	c.JSON(200, gin.H{"openai-compatibility": h.openAICompatibilityWithAuthIndex()})
+	c.JSON(200, gin.H{"openai-compatible": h.openAICompatibilityWithAuthIndex()})
 }
 func (h *Handler) PutOpenAICompat(c *gin.Context) {
 	data, err := c.GetRawData()
@@ -466,6 +466,8 @@ func (h *Handler) PatchOpenAICompat(c *gin.Context) {
 		Prefix        *string                             `json:"prefix"`
 		Disabled      *bool                               `json:"disabled"`
 		BaseURL       *string                             `json:"base-url"`
+		APIKey        *string                             `json:"api-key"`
+		ProxyURL      *string                             `json:"proxy-url"`
 		APIKeyEntries *[]config.OpenAICompatibilityAPIKey `json:"api-key-entries"`
 		Models        *[]config.OpenAICompatibilityModel  `json:"models"`
 		Headers       *map[string]string                  `json:"headers"`
@@ -519,6 +521,12 @@ func (h *Handler) PatchOpenAICompat(c *gin.Context) {
 			return
 		}
 		entry.BaseURL = trimmed
+	}
+	if body.Value.APIKey != nil {
+		entry.APIKey = strings.TrimSpace(*body.Value.APIKey)
+	}
+	if body.Value.ProxyURL != nil {
+		entry.ProxyURL = strings.TrimSpace(*body.Value.ProxyURL)
 	}
 	if body.Value.APIKeyEntries != nil {
 		entry.APIKeyEntries = append([]config.OpenAICompatibilityAPIKey(nil), (*body.Value.APIKeyEntries)...)
@@ -1087,11 +1095,14 @@ func normalizeOpenAICompatibilityEntry(entry *config.OpenAICompatibility) {
 	}
 	// Trim base-url; empty base-url indicates provider should be removed by sanitization
 	entry.BaseURL = strings.TrimSpace(entry.BaseURL)
+	entry.APIKey = strings.TrimSpace(entry.APIKey)
+	entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)
 	entry.Headers = config.NormalizeHeaders(entry.Headers)
 	existing := make(map[string]struct{}, len(entry.APIKeyEntries))
 	for i := range entry.APIKeyEntries {
 		trimmed := strings.TrimSpace(entry.APIKeyEntries[i].APIKey)
 		entry.APIKeyEntries[i].APIKey = trimmed
+		entry.APIKeyEntries[i].ProxyURL = strings.TrimSpace(entry.APIKeyEntries[i].ProxyURL)
 		if trimmed != "" {
 			existing[trimmed] = struct{}{}
 		}

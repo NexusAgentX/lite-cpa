@@ -251,7 +251,7 @@ func (c *Client) GetVertexKeys() ([]map[string]any, error) {
 
 // GetOpenAICompat fetches OpenAI compatibility entries.
 func (c *Client) GetOpenAICompat() ([]map[string]any, error) {
-	return c.getWrappedKeyList("/v0/management/openai-compatibility", "openai-compatibility")
+	return c.getWrappedKeyList("/v0/management/openai-compatible", "openai-compatible")
 }
 
 // getWrappedKeyList fetches a wrapped list from the API.

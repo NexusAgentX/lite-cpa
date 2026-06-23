@@ -225,35 +225,39 @@ func countConfiguredUpstreams(cfg map[string]any) int {
 		return 0
 	}
 	total := 0
-	total += countList(cfg, "gemini-api-key")
-	total += countList(cfg, "anthropic")
-	total += countList(cfg, "openai-responses")
-	total += countList(cfg, "vertex-api-key")
-	if entries, ok := cfg["openai-compatibility"].([]any); ok {
-		for _, raw := range entries {
-			entry, ok := raw.(map[string]any)
-			if !ok || getBool(entry, "disabled") {
-				continue
-			}
-			total += countList(entry, "api-key-entries")
-		}
-	}
+	total += countProviderKeys(cfg, "gemini-api-key")
+	total += countProviderKeys(cfg, "anthropic")
+	total += countProviderKeys(cfg, "openai-responses")
+	total += countProviderKeys(cfg, "vertex-api-key")
+	// openai-compatible items may use the flat api-key form (single key) or
+	// the api-key-entries list (multi-key); countProviderKeys honors both.
+	total += countProviderKeys(cfg, "openai-compatible")
 	return total
 }
 
-func countList(m map[string]any, key string) int {
-	raw, ok := m[key]
-	if !ok || raw == nil {
+// countProviderKeys counts effective credentials for a config-backed provider list,
+// honoring the api-key-entries multi-key form. A flat item counts as 1; an item with
+// N api-key-entries counts as N.
+func countProviderKeys(cfg map[string]any, key string) int {
+	items, ok := cfg[key].([]any)
+	if !ok {
 		return 0
 	}
-	switch value := raw.(type) {
-	case []any:
-		return len(value)
-	case []map[string]any:
-		return len(value)
-	default:
-		return 0
+	total := 0
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok || getBool(item, "disabled") {
+			continue
+		}
+		if entries, ok := item["api-key-entries"].([]any); ok && len(entries) > 0 {
+			total += len(entries)
+			continue
+		}
+		// Flat-form item (single-key shim) or provider without multi-key
+		// support: counts as a single configured upstream.
+		total++
 	}
+	return total
 }
 
 func formatKV(key, value string) string {
@@ -280,6 +284,10 @@ func getFloat(m map[string]any, key string) float64 {
 		}
 	}
 	return 0
+}
+
+func getInt(m map[string]any, key string) int {
+	return int(getFloat(m, key))
 }
 
 func getBool(m map[string]any, key string) bool {
